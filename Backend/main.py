@@ -27,9 +27,23 @@ if not JWT_SECRET or not ENCRYPTION_KEY:
 cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-# --- DATABASE SETUP ---
-SQLALCHEMY_DATABASE_URL = "sqlite:///./intern_tracker.db"
-engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+# --- DATABASE SETUP (PROD READY) ---
+SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Fix for Render/Heroku: SQLAlchemy requires 'postgresql://'
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
+
+# Fallback for local development
+if not SQLALCHEMY_DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./intern_tracker.db"
+
+# PostgreSQL requires different arguments than SQLite
+if "sqlite" in SQLALCHEMY_DATABASE_URL:
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+else:
+    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 
@@ -87,9 +101,11 @@ class CoverRequest(BaseModel):
 
 # --- APP INITIALIZATION ---
 app = FastAPI()
+
+# UPDATE THIS: Add your live Vercel URL here!
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -100,7 +116,7 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# --- AUTHENTICATION DEPENDENCY ---
+# --- AUTHENTICATION ---
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
@@ -119,10 +135,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
 def signup(user: UserAuth, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == user.username).first():
         raise HTTPException(status_code=400, detail="Username taken")
-    
-    # Direct bcrypt hashing fix
     hashed_pw = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    
     new_user = User(username=user.username, hashed_password=hashed_pw)
     db.add(new_user)
     db.commit()
@@ -131,11 +144,8 @@ def signup(user: UserAuth, db: Session = Depends(get_db)):
 @app.post("/api/login")
 def login(user: UserAuth, db: Session = Depends(get_db)):
     db_user = db.query(User).filter(User.username == user.username).first()
-    
-    # Direct bcrypt verification fix
     if not db_user or not bcrypt.checkpw(user.password.encode('utf-8'), db_user.hashed_password.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
     token = jwt.encode({"sub": db_user.username, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm=ALGORITHM)
     return {"access_token": token, "token_type": "bearer", "username": db_user.username}
 
@@ -146,7 +156,7 @@ def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user)
     if keys.gemini_key:
         current_user.enc_gemini_key = cipher_suite.encrypt(keys.gemini_key.encode()).decode()
     db.commit()
-    return {"message": "Keys secured in vault"}
+    return {"message": "Keys secured"}
 
 @app.get("/api/jobs")
 def get_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -164,7 +174,6 @@ def create_job(job: JobCreate, current_user: User = Depends(get_current_user), d
 def update_job(job_id: int, job: JobCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db_job = db.query(JobApplication).filter(JobApplication.id == job_id, JobApplication.user_id == current_user.id).first()
     if not db_job: raise HTTPException(status_code=404, detail="Job not found")
-    
     for key, value in job.dict().items():
         setattr(db_job, key, value)
     db.commit()
@@ -177,25 +186,18 @@ def delete_job(job_id: int, current_user: User = Depends(get_current_user), db: 
     if not db_job: raise HTTPException(status_code=404, detail="Job not found")
     db.delete(db_job)
     db.commit()
-    return {"message": "Deleted successfully"}
+    return {"message": "Deleted"}
 
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
     if not current_user.enc_rapid_key:
-        raise HTTPException(status_code=400, detail="Missing RapidAPI Key. Please add it in Settings.")
-    
-    try:
-        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
-    except InvalidToken:
-        raise HTTPException(status_code=500, detail="Key decryption failed. Please re-enter your key in Settings.")
-
+        raise HTTPException(status_code=400, detail="Missing RapidAPI Key")
+    user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
     url = "https://jsearch.p.rapidapi.com/search"
     params = {"query": f"{query} in {location}", "page": "1", "num_pages": "1", "date_posted": datePosted, "employment_types": jobType}
     headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
-    
     response = requests.get(url, headers=headers, params=params)
     if response.status_code != 200: raise HTTPException(status_code=response.status_code, detail=response.text)
-    
     data = response.json().get("data", [])
     return [{
         "_id": j.get("job_id"), "company": j.get("employer_name", "Unknown"), "role": j.get("job_title", "Role"),
@@ -207,17 +209,9 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
 @app.post("/api/generate-cover")
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
     if not current_user.enc_gemini_key:
-        raise HTTPException(status_code=400, detail="Missing Gemini API Key. Please add it in Settings.")
-    
-    try:
-        user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
-    except InvalidToken:
-        raise HTTPException(status_code=500, detail="Key decryption failed. Please re-enter your key in Settings.")
-
-    prompt = f"Write a compelling internship cover letter. Company: {req.company}. Role: {req.role}. Description: {req.description}. My Background: {req.context}. Requirements: 3 tight paragraphs, under 250 words, no placeholders. Be direct and professional."
-    
+        raise HTTPException(status_code=400, detail="Missing Gemini Key")
+    user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    prompt = f"Write a cover letter. Company: {req.company}. Role: {req.role}. Background: {req.context}."
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={user_gemini_key}"
     response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-    
-    if response.status_code != 200: raise HTTPException(status_code=response.status_code, detail="Gemini API Error")
     return {"text": response.json()['candidates'][0]['content']['parts'][0]['text']}
