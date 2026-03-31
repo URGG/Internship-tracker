@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import './KanbanBoard.css';
 
 const API_BASE = "https://internship-tracker-1-9w2v.onrender.com/api";
-const COLUMNS = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
+const COLUMNS = ["To Apply", "Applied", "Interview", "Offer", "Rejected"];
 
 const KanbanBoard = () => {
   const [jobs, setJobs] = useState([]);
@@ -76,7 +76,7 @@ const KanbanBoard = () => {
     <div className="kanban-container">
       <header className="kanban-header">
         <h1>My Internship Pipeline</h1>
-        <p>Manage your Summer 2026 applications</p>
+        <p>Manage your  applications</p>
       </header>
 
       <div className="kanban-board">
