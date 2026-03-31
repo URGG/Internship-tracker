@@ -355,7 +355,7 @@ export default function App() {
           </div>
 
           <div className="content">
-            {page === "tracker" && <KanbanBoard />}
+            {page === "tracker" && <KanbanBoard filtered={filtered} setDragId={setDragId} onDrop={onDrop} openEdit={openEdit} />}
             {page === "search" && <SearchPage jsQ={jsQ} setJsQ={setJsQ} jsLoc={jsLoc} setJsLoc={setJsLoc} jsType={jsType} setJsType={setJsType} jsDate={jsDate} setJsDate={setJsDate} runSearch={runSearch} jsLoad={jsLoad} jsErr={jsErr} jsRes={jsRes} jsAdded={jsAdded} addFromSearch={saveSearchJob} />}
             {page === "settings" && <SettingsPage rKey={rKey} setRKey={setRKey} gKey={gKey} setGKey={setGKey} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} saveUserKeys={saveUserKeys} />}
           </div>
