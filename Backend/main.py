@@ -16,7 +16,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- SECURITY CONSTANTS ---
 JWT_SECRET = os.getenv("JWT_SECRET")
 ALGORITHM = "HS256"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
@@ -27,18 +26,14 @@ if not JWT_SECRET or not ENCRYPTION_KEY:
 cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 
-# --- DATABASE SETUP (PROD READY) ---
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
-# Fix for Render/Heroku: SQLAlchemy requires 'postgresql://'
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Fallback for local development
 if not SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./intern_tracker.db"
 
-# PostgreSQL requires different arguments than SQLite
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
 else:
@@ -72,7 +67,6 @@ class JobApplication(Base):
 
 Base.metadata.create_all(bind=engine)
 
-# --- PYDANTIC MODELS ---
 class UserAuth(BaseModel):
     username: str
     password: str
@@ -99,13 +93,11 @@ class CoverRequest(BaseModel):
     description: str
     context: str
 
-# --- APP INITIALIZATION ---
 app = FastAPI()
 
-# UPDATE THIS: Add your live Vercel URL here!
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -116,7 +108,6 @@ def get_db():
     try: yield db
     finally: db.close()
 
-# --- AUTHENTICATION ---
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
@@ -128,8 +119,6 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.username == username).first()
     if user is None: raise HTTPException(status_code=401, detail="User not found")
     return user
-
-# --- ROUTES ---
 
 @app.post("/api/signup")
 def signup(user: UserAuth, db: Session = Depends(get_db)):
@@ -192,13 +181,19 @@ def delete_job(job_id: int, current_user: User = Depends(get_current_user), db: 
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
     if not current_user.enc_rapid_key:
         raise HTTPException(status_code=400, detail="Missing RapidAPI Key")
-    user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    try:
+        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    except InvalidToken:
+        raise HTTPException(status_code=500, detail="Key decryption failed")
+    
     url = "https://jsearch.p.rapidapi.com/search"
     params = {"query": f"{query} in {location}", "page": "1", "num_pages": "1", "date_posted": datePosted, "employment_types": jobType}
     headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
     response = requests.get(url, headers=headers, params=params)
+    
     if response.status_code != 200: raise HTTPException(status_code=response.status_code, detail=response.text)
     data = response.json().get("data", [])
+    
     return [{
         "_id": j.get("job_id"), "company": j.get("employer_name", "Unknown"), "role": j.get("job_title", "Role"),
         "location": f"{j.get('job_city', '')}, {j.get('job_state', '')}".strip(", "), "remote": bool(j.get("job_is_remote")),
@@ -210,8 +205,14 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
     if not current_user.enc_gemini_key:
         raise HTTPException(status_code=400, detail="Missing Gemini Key")
-    user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
-    prompt = f"Write a cover letter. Company: {req.company}. Role: {req.role}. Background: {req.context}."
+    try:
+        user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    except InvalidToken:
+        raise HTTPException(status_code=500, detail="Key decryption failed")
+    
+    prompt = f"Write a compelling internship cover letter. Company: {req.company}. Role: {req.role}. Description: {req.description}. My Background: {req.context}. Requirements: 3 tight paragraphs, under 250 words, no placeholders. Be direct and professional."
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={user_gemini_key}"
     response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
+    
+    if response.status_code != 200: raise HTTPException(status_code=response.status_code, detail="Gemini API Error")
     return {"text": response.json()['candidates'][0]['content']['parts'][0]['text']}
