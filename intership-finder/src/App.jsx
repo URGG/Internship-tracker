@@ -8,8 +8,7 @@ import SettingsPage from "./pages/SettingsPage";
 import Modal from "./components/shared/Modal";
 
 // Changed to localhost to prevent CORS/Fetch errors
-const API_BASE = "https://internship-tracker-boke.onrender.com";
-
+const API_BASE = "https://internship-tracker-1-9w2v.onrender.com";
 // --- LOGIN MODAL COMPONENT ---
 const LoginModal = ({ show, setShow, setToken, toast }) => {
   const [isSignUp, setIsSignUp] = useState(false);
