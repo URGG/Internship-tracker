@@ -1,6 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { STATUSES, BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
+import KanbanBoard from './KanbanBoard';
 
 import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
@@ -302,7 +303,7 @@ export default function App() {
     { id: "offers", icon: "✦", label: "Offers", count: apps.filter(a => a.status === "Offer").length },
     { id: "settings", icon: "⚙", label: "Settings", count: null },
   ];
-
+  
   return (
     <>
       <div className="shell">
@@ -354,7 +355,7 @@ export default function App() {
           </div>
 
           <div className="content">
-            {page === "tracker" && <TrackerPage stats={stats} srcF={srcF} setSrcF={setSrcF} view={view} setView={setView} filtered={filtered} dragOver={dragOver} setDragOver={setDragOver} onDrop={onDrop} openEdit={openEdit} openCover={openCover} setDragId={setDragId} />}
+            {page === "tracker" && <KanbanBoard />}
             {page === "search" && <SearchPage jsQ={jsQ} setJsQ={setJsQ} jsLoc={jsLoc} setJsLoc={setJsLoc} jsType={jsType} setJsType={setJsType} jsDate={jsDate} setJsDate={setJsDate} runSearch={runSearch} jsLoad={jsLoad} jsErr={jsErr} jsRes={jsRes} jsAdded={jsAdded} addFromSearch={saveSearchJob} />}
             {page === "settings" && <SettingsPage rKey={rKey} setRKey={setRKey} gKey={gKey} setGKey={setGKey} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} saveUserKeys={saveUserKeys} />}
           </div>
