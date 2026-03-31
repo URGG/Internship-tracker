@@ -1,46 +1,50 @@
 .kanban-container {
-    min-height: 100vh;
-    background-color: #0F172A;
-    padding: 2rem;
-    color: #ffffff;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    padding: 1rem 0;
+    color: #f8fafc;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
 }
 
 .kanban-header {
-    margin-bottom: 2.5rem;
+    margin-bottom: 2rem;
 }
 
 .kanban-header h1 {
     font-size: 2rem;
     font-weight: 800;
     margin: 0;
-    background: linear-gradient(90deg, #fff, #94a3b8);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
+    color: #ffffff;
 }
 
 .kanban-header p {
     color: #64748b;
-    margin-top: 0.5rem;
+    margin-top: 0.25rem;
     font-size: 1rem;
 }
+
+
+/* Board Layout */
 
 .kanban-board {
     display: flex;
     gap: 1.25rem;
+    /* Perfect spacing between columns */
     overflow-x: auto;
-    padding-bottom: 1.5rem;
+    padding-bottom: 2rem;
     align-items: flex-start;
 }
 
+
+/* Columns */
+
 .kanban-column {
-    flex: 0 0 300px;
+    flex: 0 0 320px;
+    /* Exact width from your screenshot */
     background-color: #1e293b;
+    /* Distinct lighter slate background */
     border-radius: 12px;
     display: flex;
     flex-direction: column;
     max-height: 85vh;
-    border: 1px solid #334155;
 }
 
 .column-header {
@@ -52,20 +56,20 @@
 }
 
 .column-header h2 {
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 700;
     text-transform: uppercase;
     letter-spacing: 0.05em;
-    color: #94a3b8;
+    color: #cbd5e1;
     margin: 0;
 }
 
 .column-count {
-    background-color: #0f172a;
+    background-color: transparent;
     color: #38bdf8;
-    font-size: 0.75rem;
-    font-weight: 700;
-    padding: 2px 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
     border-radius: 6px;
     border: 1px solid #0ea5e9;
 }
@@ -78,26 +82,26 @@
     flex-direction: column;
     gap: 1rem;
     min-height: 200px;
-    /* Essential for dropping into empty columns */
 }
 
 
-/* Job Card Styling */
+/* Cards */
 
 .job-card {
     background-color: #0f172a;
+    /* Darker card background */
     padding: 1.25rem;
-    border-radius: 10px;
+    /* Proper breathing room */
+    border-radius: 8px;
     border: 1px solid #1e293b;
     cursor: grab;
     position: relative;
-    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.2s, border-color 0.2s;
+    transition: border-color 0.2s ease, transform 0.2s ease;
 }
 
 .job-card:hover {
-    transform: translateY(-4px);
     border-color: #38bdf8;
-    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.4);
+    transform: translateY(-2px);
 }
 
 .job-card:active {
@@ -105,47 +109,75 @@
 }
 
 .job-role {
-    font-size: 1.1rem;
+    font-size: 1.05rem;
     font-weight: 700;
-    color: #f8fafc;
-    margin: 0 0 0.4rem 0;
+    color: #ffffff;
+    margin: 0 0 0.5rem 0;
+    line-height: 1.4;
+    padding-right: 1.5rem;
+    /* Keep text from overlapping the icon */
 }
 
 .job-company {
     color: #38bdf8;
+    /* The exact bright blue from the screenshot */
     font-size: 0.9rem;
     font-weight: 600;
-    margin: 0 0 1rem 0;
+    margin: 0 0 1.25rem 0;
 }
+
+
+/* Tags */
 
 .job-tags {
     display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
 }
 
 .tag {
-    font-size: 0.7rem;
+    font-size: 0.75rem;
     font-weight: 600;
-    padding: 4px 8px;
-    border-radius: 4px;
-    background-color: #1e293b;
-    color: #94a3b8;
+    padding: 0.35rem 0.6rem;
+    border-radius: 6px;
+    background-color: #334155;
+    color: #cbd5e1;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
 }
 
 .tag.remote {
-    color: #4ade80;
-    background-color: rgba(74, 222, 128, 0.1);
+    background-color: rgba(16, 185, 129, 0.15);
+    color: #34d399;
 }
+
+
+/* Link Icon */
 
 .link-icon {
     position: absolute;
-    top: 1rem;
-    right: 1rem;
-    opacity: 0.3;
-    color: #94a3b8;
+    top: 1.25rem;
+    right: 1.25rem;
+    color: #64748b;
 }
 
 .job-card:hover .link-icon {
-    opacity: 1;
-    color: #38bdf8;
+    color: #94a3b8;
+}
+
+
+/* Smooth Scrollbar */
+
+.column-body::-webkit-scrollbar {
+    width: 6px;
+}
+
+.column-body::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.column-body::-webkit-scrollbar-thumb {
+    background-color: #334155;
+    border-radius: 10px;
 }
