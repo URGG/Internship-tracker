@@ -10,23 +10,36 @@
 
 /* --- THEME VARIABLES --- */
 
+
+/* --- THEME VARIABLES --- */
+
 :root {
-    /* STRICT DARK MODE (Pure Black & White) */
-    --bg: #000000;
-    --s0: #0a0a0a;
-    --s1: #121212;
-    --s2: #1a1a1a;
-    --s3: #222222;
-    --b0: #333333;
-    --b1: #444444;
+    /* NOTION-STYLE DARK MODE (Soft Dark Grays) */
+    --bg: #191919;
+    /* Main background */
+    --s0: #202020;
+    /* Sidebar and Topbar */
+    --s1: #252525;
+    /* Panels and Cards */
+    --s2: #2c2c2c;
+    /* Hover states */
+    --s3: #373737;
+    /* Active states */
+    --b0: #2f2f2f;
+    /* Soft borders */
+    --b1: #3f3f3f;
+    /* Prominent borders */
     --b2: #555555;
-    --txt: #ffffff;
-    --txt2: #cccccc;
-    --txt3: #888888;
-    /* UI Accents (Monochromatic) */
+    --txt: #ebebeb;
+    /* Off-white text (softer than pure white) */
+    --txt2: #9b9a97;
+    /* Notion's signature muted text */
+    --txt3: #787774;
+    /* Very muted text */
+    /* UI Accents */
     --acc: #ffffff;
-    --acc2: #eeeeee;
-    --acc3: #dddddd;
+    --acc2: #e0e0e0;
+    --acc3: #cccccc;
     /* Status Colors (Kept intact so job tags don't break) */
     --grn: #34d399;
     --amb: #fbbf24;
