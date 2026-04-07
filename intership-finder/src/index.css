@@ -7,21 +7,27 @@
     padding: 0
 }
 
+
+/* --- THEME VARIABLES --- */
+
 :root {
-    --bg: #08090c;
-    --s0: #0d0f14;
-    --s1: #13161e;
-    --s2: #191d28;
-    --s3: #1e2230;
-    --b0: #232840;
-    --b1: #2c3252;
-    --b2: #363d60;
-    --txt: #e9ecff;
-    --txt2: #8b91b8;
-    --txt3: #4a5070;
-    --acc: #5b7fff;
-    --acc2: #a78bfa;
-    --acc3: #38bdf8;
+    /* STRICT DARK MODE (Pure Black & White) */
+    --bg: #000000;
+    --s0: #0a0a0a;
+    --s1: #121212;
+    --s2: #1a1a1a;
+    --s3: #222222;
+    --b0: #333333;
+    --b1: #444444;
+    --b2: #555555;
+    --txt: #ffffff;
+    --txt2: #cccccc;
+    --txt3: #888888;
+    /* UI Accents (Monochromatic) */
+    --acc: #ffffff;
+    --acc2: #eeeeee;
+    --acc3: #dddddd;
+    /* Status Colors (Kept intact so job tags don't break) */
     --grn: #34d399;
     --amb: #fbbf24;
     --red: #f87171;
@@ -33,13 +39,33 @@
     --rxl: 20px;
 }
 
+body.light-mode {
+    /* STRICT LIGHT MODE (Pure White & Black) */
+    --bg: #ffffff;
+    --s0: #f7f7f7;
+    --s1: #f0f0f0;
+    --s2: #e8e8e8;
+    --s3: #e0e0e0;
+    --b0: #d1d1d1;
+    --b1: #b3b3b3;
+    --b2: #999999;
+    --txt: #000000;
+    --txt2: #444444;
+    --txt3: #777777;
+    /* Inverted Accents */
+    --acc: #000000;
+    --acc2: #222222;
+    --acc3: #333333;
+}
+
 html,
 body,
 #root {
     height: 100%;
     background: var(--bg);
     color: var(--txt);
-    font-family: var(--sans)
+    font-family: var(--sans);
+    transition: background 0.3s ease, color 0.3s ease;
 }
 
 ::-webkit-scrollbar {
@@ -104,7 +130,8 @@ a {
     justify-content: center;
     font-size: 15px;
     font-weight: 800;
-    color: #fff;
+    color: var(--bg);
+    /* Flipped to dynamic var */
     flex-shrink: 0
 }
 
@@ -206,7 +233,8 @@ a {
     border-radius: var(--r);
     background: linear-gradient(135deg, var(--acc), #7b6ef6);
     border: none;
-    color: #fff;
+    color: var(--bg);
+    /* Flipped to dynamic var */
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
@@ -313,12 +341,14 @@ a {
 .tbtn-p {
     background: linear-gradient(135deg, var(--acc), #7b6ef6);
     border-color: transparent;
-    color: #fff
+    color: var(--bg);
+    /* Flipped to dynamic var */
 }
 
 .tbtn-p:hover {
     opacity: .88;
-    color: #fff;
+    color: var(--bg);
+    /* Flipped to dynamic var */
     border-color: transparent
 }
 
@@ -894,7 +924,8 @@ a {
     border-radius: var(--r);
     background: linear-gradient(135deg, var(--acc), #7b6ef6);
     border: none;
-    color: #fff;
+    color: var(--bg);
+    /* Flipped to dynamic var */
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
@@ -1184,7 +1215,8 @@ a {
 .mbtn-p {
     background: linear-gradient(135deg, var(--acc), #7b6ef6);
     border-color: transparent;
-    color: #fff
+    color: var(--bg);
+    /* Flipped to dynamic var */
 }
 
 .mbtn-p:hover {

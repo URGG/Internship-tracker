@@ -1,22 +1,35 @@
-import React from 'react';
+import React, { useState } from 'react';
 import './KanbanBoard.css';
 
 const COLUMNS = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
 
 // We pass the data in from App.jsx so Add and Search work perfectly!
 const KanbanBoard = ({ filtered, setDragId, onDrop, openEdit }) => {
+  // NEW: State to track which column is currently being hovered over
+  const [hoveredCol, setHoveredCol] = useState(null);
   
   const handleDragStart = (e, jobId) => {
     e.dataTransfer.setData("jobId", jobId);
     setDragId(jobId); // Tell App.jsx which job is moving
   };
 
-  const handleDragOver = (e) => {
+  const handleDragOver = (e, colName) => {
     e.preventDefault(); 
+    // NEW: Tell React this column is being hovered
+    if (hoveredCol !== colName) {
+      setHoveredCol(colName);
+    }
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    // NEW: Turn off the glow when the mouse leaves the column
+    setHoveredCol(null);
   };
 
   const handleDrop = (e, newStatus) => {
     e.preventDefault();
+    setHoveredCol(null); // NEW: Turn off the glow when dropped
     onDrop(newStatus); // App.jsx handles the database save!
   };
 
@@ -35,8 +48,10 @@ const KanbanBoard = ({ filtered, setDragId, onDrop, openEdit }) => {
         {COLUMNS.map(col => (
           <div 
             key={col} 
-            className="kanban-column"
-            onDragOver={handleDragOver}
+            /* NEW: Dynamically add the 'drag-over' class if this is the hovered column */
+            className={`kanban-column ${hoveredCol === col ? 'drag-over' : ''}`}
+            onDragOver={(e) => handleDragOver(e, col)}
+            onDragLeave={handleDragLeave}
             onDrop={(e) => handleDrop(e, col)}
           >
             <div className="column-header">

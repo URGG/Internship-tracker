@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import { STATUSES, BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import KanbanBoard from './KanbanBoard';
+import ThemeToggle from "./components/shared/ThemeToggle";
 
 import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
@@ -10,6 +11,7 @@ import Modal from "./components/shared/Modal";
 
 // Changed to localhost to prevent CORS/Fetch errors
 const API_BASE = "https://internship-tracker-1-9w2v.onrender.com/api";
+
 // --- LOGIN MODAL COMPONENT ---
 const LoginModal = ({ show, setShow, setToken, toast }) => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -339,19 +341,34 @@ export default function App() {
         </nav>
 
         <div className="main">
+          
           <div className="topbar">
-            <div className="topbar-title">{page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : "Settings"}</div>
+            <div className="topbar-title">
+              {page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : "Settings"}
+            </div>
             
             {!token ? (
-               <button className="tbtn tbtn-p" onClick={() => setShowLogin(true)} style={{ marginLeft: "auto" }}>Sign In / Sign Up</button>
+               <button className="tbtn tbtn-p" onClick={() => setShowLogin(true)} style={{ marginLeft: "auto" }}>
+                 Sign In / Sign Up
+               </button>
             ) : (
               <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt3)" }}>
                 Logged in as <span style={{color: "var(--txt)", fontWeight: 600}}>{localStorage.getItem("username")}</span>
               </div>
             )}
 
-            {page === "tracker" && <div className="sbox"><span className="sbox-ico">⌕</span><input placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} /></div>}
-            {page === "tracker" && <button className="tbtn tbtn-p" onClick={openAdd}>+ Add</button>}
+            {page === "tracker" && (
+              <div className="sbox">
+                <span className="sbox-ico">⌕</span>
+                <input placeholder="Search..." value={q} onChange={e => setQ(e.target.value)} />
+              </div>
+            )}
+            
+            {page === "tracker" && (
+              <button className="tbtn tbtn-p" onClick={openAdd}>+ Add</button>
+            )}
+
+            <ThemeToggle />
           </div>
 
           <div className="content">
@@ -359,6 +376,7 @@ export default function App() {
             {page === "search" && <SearchPage jsQ={jsQ} setJsQ={setJsQ} jsLoc={jsLoc} setJsLoc={setJsLoc} jsType={jsType} setJsType={setJsType} jsDate={jsDate} setJsDate={setJsDate} runSearch={runSearch} jsLoad={jsLoad} jsErr={jsErr} jsRes={jsRes} jsAdded={jsAdded} addFromSearch={saveSearchJob} />}
             {page === "settings" && <SettingsPage rKey={rKey} setRKey={setRKey} gKey={gKey} setGKey={setGKey} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} saveUserKeys={saveUserKeys} />}
           </div>
+
         </div>
       </div>
 
