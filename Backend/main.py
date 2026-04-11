@@ -14,7 +14,7 @@ from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from dotenv import load_dotenv
 import google.generativeai as genai
-from pydantic import BaseModel
+
 
 load_dotenv()
 
