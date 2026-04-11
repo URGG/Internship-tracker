@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // We have to point PDF.js to its worker script so it doesn't freeze your app
-pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
 export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, setResumeTxt, saveUserKeys }) {
   const [isDragging, setIsDragging] = useState(false);
