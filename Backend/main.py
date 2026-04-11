@@ -13,6 +13,8 @@ import bcrypt
 from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from dotenv import load_dotenv
+import google.generativeai as genai
+from pydantic import BaseModel
 
 load_dotenv()
 
@@ -206,13 +208,31 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     if not current_user.enc_gemini_key:
         raise HTTPException(status_code=400, detail="Missing Gemini Key")
     try:
-        user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+        # Added .strip() to silently fix any accidental spaces pasted into the Settings vault
+        user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode().strip()
     except InvalidToken:
         raise HTTPException(status_code=500, detail="Key decryption failed")
     
-    prompt = f"Write a compelling internship cover letter. Company: {req.company}. Role: {req.role}. Description: {req.description}. My Background: {req.context}. Requirements: 3 tight paragraphs, under 250 words, no placeholders. Be direct and professional."
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={user_gemini_key}"
-    response = requests.post(url, json={"contents": [{"parts": [{"text": prompt}]}]})
-    
-    if response.status_code != 200: raise HTTPException(status_code=response.status_code, detail="Gemini API Error")
-    return {"text": response.json()['candidates'][0]['content']['parts'][0]['text']}
+    try:
+        # 1. Use the official SDK you already imported
+        genai.configure(api_key=user_gemini_key)
+        model = genai.GenerativeModel('gemini-1.5-flash')
+        
+        # 2. Build the prompt
+        prompt = f"""
+        Write a compelling internship cover letter. 
+        Company: {req.company}. 
+        Role: {req.role}. 
+        Job Description: {req.description}. 
+        My Background: {req.context}. 
+        Requirements: 3 tight paragraphs, under 250 words, no placeholders. Be direct, professional, and highlight my specific technical skills that match the role.
+        """
+        
+        # 3. Generate
+        response = model.generate_content(prompt)
+        return {"text": response.text}
+        
+    except Exception as e:
+        # 4. Expose the REAL error so we can actually fix it!
+        print(f" Gemini API Crash Details: {str(e)}") 
+        raise HTTPException(status_code=500, detail=f"Google API Error: {str(e)}")
