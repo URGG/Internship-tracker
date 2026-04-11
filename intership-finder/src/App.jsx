@@ -3,7 +3,7 @@ import { STATUSES, BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import KanbanBoard from './KanbanBoard';
 import ThemeToggle from "./components/shared/ThemeToggle";
-import { SpeedInsights } from "@vercel/speed-insights/next"
+
 import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
