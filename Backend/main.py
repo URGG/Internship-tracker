@@ -216,7 +216,7 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     try:
         # 1. Use the official SDK you already imported
         genai.configure(api_key=user_gemini_key)
-        model = genai.GenerativeModel('gemini-1.5-flash')
+        model = genai.GenerativeModel('gemini-2.5-flash')
         
         # 2. Build the prompt
         prompt = f"""
