@@ -3,7 +3,7 @@ import { STATUSES, BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import KanbanBoard from './KanbanBoard';
 import ThemeToggle from "./components/shared/ThemeToggle";
-
+import { SpeedInsights } from "@vercel/speed-insights/next"
 import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -293,8 +293,11 @@ export default function App() {
   const handleNav = (id) => {
     setPage(id === "settings" || id === "search" ? id : "tracker");
     if (["wishlist", "ivw", "offers"].includes(id)) {
-      setStF(id === "wishlist" ? "Wishlist" : id === "ivw" ? "Phone Screen" : "Offer");
-    } else { setStF("all"); }
+      // Fixed "Phone Screen" to "Interview" so it perfectly matches your column name
+      setStF(id === "wishlist" ? "Wishlist" : id === "ivw" ? "Interview" : "Offer");
+    } else { 
+      setStF("all"); 
+    }
   };
 
   const navItems = [
