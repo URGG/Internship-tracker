@@ -291,9 +291,10 @@ export default function App() {
   };
 
   const handleNav = (id) => {
-    setPage(id === "settings" || id === "search" ? id : "tracker");
+    // FIX: Added "analytics" to the allowed pages array
+    setPage(["settings", "search", "analytics"].includes(id) ? id : "tracker");
+    
     if (["wishlist", "ivw", "offers"].includes(id)) {
-      // Fixed "Phone Screen" to "Interview" so it perfectly matches your column name
       setStF(id === "wishlist" ? "Wishlist" : id === "ivw" ? "Interview" : "Offer");
     } else { 
       setStF("all"); 
@@ -315,13 +316,13 @@ export default function App() {
         <nav className="sb">
           <div className="sb-logo"><div className="sb-logo-mark">i</div><div className="sb-logo-text">intern<span>.track</span></div></div>
           <span className="sb-sect">Navigate</span>
-          {navItems.slice(0, 2).map(n => (
+          {navItems.slice(0, 3).map(n => (
             <button key={n.id} className={`sb-btn${page === n.id ? " on" : ""}`} onClick={() => handleNav(n.id)}>
               <span className="sb-icon">{n.icon}</span>{n.label} {n.count !== null && <span className="sb-badge">{n.count}</span>}
             </button>
           ))}
           <div className="sb-div" /><span className="sb-sect">Filter by stage</span>
-          {navItems.slice(2, 5).map(n => (
+          {navItems.slice(3, 6).map(n => (
             <button key={n.id} className={`sb-btn${stF === n.label ? " on" : ""}`} onClick={() => handleNav(n.id)}>
               <span className="sb-icon">{n.icon}</span>{n.label} <span className="sb-badge">{n.count}</span>
             </button>
