@@ -3,7 +3,7 @@ import { STATUSES, BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import KanbanBoard from './KanbanBoard';
 import ThemeToggle from "./components/shared/ThemeToggle";
-
+import AnalyticsPage from "./pages/AnalyticsPage";
 import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
@@ -303,12 +303,12 @@ export default function App() {
   const navItems = [
     { id: "tracker", icon: "⊞", label: "Tracker", count: apps.length },
     { id: "search", icon: "◎", label: "Job Search", count: jsRes.length || null },
+    { id: "analytics", icon: "📊", label: "Analytics", count: null }, // NEW BUTTON HERE
     { id: "wishlist", icon: "◇", label: "Wishlist", count: apps.filter(a => a.status === "Wishlist").length },
     { id: "ivw", icon: "◉", label: "Interviews", count: apps.filter(a => ["Phone Screen", "Interview"].includes(a.status)).length },
     { id: "offers", icon: "✦", label: "Offers", count: apps.filter(a => a.status === "Offer").length },
     { id: "settings", icon: "⚙", label: "Settings", count: null },
   ];
-  
   return (
     <>
       <div className="shell">
@@ -377,6 +377,7 @@ export default function App() {
           <div className="content">
             {page === "tracker" && <KanbanBoard filtered={filtered} setDragId={setDragId} onDrop={onDrop} openEdit={openEdit} />}
             {page === "search" && <SearchPage jsQ={jsQ} setJsQ={setJsQ} jsLoc={jsLoc} setJsLoc={setJsLoc} jsType={jsType} setJsType={setJsType} jsDate={jsDate} setJsDate={setJsDate} runSearch={runSearch} jsLoad={jsLoad} jsErr={jsErr} jsRes={jsRes} jsAdded={jsAdded} addFromSearch={saveSearchJob} />}
+            {page === "analytics" && <AnalyticsPage apps={apps} />}
             {page === "settings" && <SettingsPage rKey={rKey} setRKey={setRKey} gKey={gKey} setGKey={setGKey} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} saveUserKeys={saveUserKeys} />}
           </div>
 
