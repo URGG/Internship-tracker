@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, Bar, Cell } from 'recharts';
+import Heatmap from '../components/shared/Heatmap';
 
 export default function AnalyticsPage({ apps }) {
  
@@ -37,11 +38,23 @@ export default function AnalyticsPage({ apps }) {
       count: funnelMap[status]
     }));
 
-    return { total, interviews, offers, interviewRate, timeline, funnel };
+    // 4. Source Breakdown
+    const sourceMap = {};
+    apps.forEach(app => {
+      const s = app.source || "Other";
+      if (!sourceMap[s]) sourceMap[s] = 0;
+      sourceMap[s]++;
+    });
+    const sources = Object.keys(sourceMap)
+      .map(source => ({ source, count: sourceMap[source] }))
+      .sort((a, b) => b.count - a.count);
+
+    return { total, interviews, offers, interviewRate, timeline, funnel, sources };
   }, [apps]);
 
   // Colors for the funnel bars
   const COLORS = { Wishlist: "#787774", Applied: "#5b7fff", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
+  const SOURCE_COLORS = ["#5b7fff", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#38bdf8"];
 
   if (!stats) {
     return (
@@ -71,6 +84,12 @@ export default function AnalyticsPage({ apps }) {
         </div>
       </div>
 
+      {/* HEATMAP */}
+      <div className="scard" style={{ marginBottom: "24px" }}>
+        <h3>Application Activity</h3>
+        <Heatmap apps={apps} />
+      </div>
+
       {/* TIMELINE CHART */}
       <div className="scard" style={{ marginBottom: "24px" }}>
         <h3 style={{ marginBottom: "24px" }}>Application Velocity</h3>
@@ -95,26 +114,53 @@ export default function AnalyticsPage({ apps }) {
         </div>
       </div>
 
-      {/* FUNNEL CHART */}
-      <div className="scard">
-        <h3 style={{ marginBottom: "24px" }}>Pipeline Breakdown</h3>
-        <div style={{ width: '100%', height: 250 }}>
-          <ResponsiveContainer>
-            <BarChart data={stats.funnel} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
-              <XAxis type="number" hide />
-              <YAxis dataKey="status" type="category" stroke="var(--txt)" fontSize={13} tickLine={false} axisLine={false} width={80} />
-              <Tooltip 
-                cursor={{ fill: "var(--s3)" }}
-                contentStyle={{ backgroundColor: "var(--s2)", border: "1px solid var(--b1)", borderRadius: "8px", color: "var(--txt)" }}
-              />
-              <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={30}>
-                {stats.funnel.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={COLORS[entry.status]} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+      {/* BOTTOM CHARTS GRID */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(400px, 1fr))", gap: "24px" }}>
+        
+        {/* FUNNEL CHART */}
+        <div className="scard" style={{ margin: 0 }}>
+          <h3 style={{ marginBottom: "24px" }}>Pipeline Breakdown</h3>
+          <div style={{ width: '100%', height: 250 }}>
+            <ResponsiveContainer>
+              <BarChart data={stats.funnel} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
+                <XAxis type="number" hide />
+                <YAxis dataKey="status" type="category" stroke="var(--txt)" fontSize={13} tickLine={false} axisLine={false} width={80} />
+                <Tooltip 
+                  cursor={{ fill: "var(--s3)" }}
+                  contentStyle={{ backgroundColor: "var(--s2)", border: "1px solid var(--b1)", borderRadius: "8px", color: "var(--txt)" }}
+                />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={30}>
+                  {stats.funnel.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={COLORS[entry.status]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
+
+        {/* SOURCE CHART */}
+        <div className="scard" style={{ margin: 0 }}>
+          <h3 style={{ marginBottom: "24px" }}>Top Channels</h3>
+          <div style={{ width: '100%', height: 250 }}>
+            <ResponsiveContainer>
+              <BarChart data={stats.sources} layout="vertical" margin={{ top: 0, right: 30, left: 20, bottom: 0 }}>
+                <XAxis type="number" hide />
+                <YAxis dataKey="source" type="category" stroke="var(--txt)" fontSize={13} tickLine={false} axisLine={false} width={80} />
+                <Tooltip 
+                  cursor={{ fill: "var(--s3)" }}
+                  contentStyle={{ backgroundColor: "var(--s2)", border: "1px solid var(--b1)", borderRadius: "8px", color: "var(--txt)" }}
+                />
+                <Bar dataKey="count" radius={[0, 4, 4, 0]} barSize={30}>
+                  {stats.sources.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={SOURCE_COLORS[index % SOURCE_COLORS.length]} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
       </div>
 
     </div>
