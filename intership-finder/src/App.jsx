@@ -224,7 +224,7 @@ export default function App() {
 
   const saveSearchJob = async (r) => {
     if (!requireAuth()) return;
-    const newJob = { company: r.company, role: r.role, status: "Wishlist", source: r.source, applied_date: new Date().toISOString().slice(0, 10), location: r.location, remote: r.remote, link: r.link, notes: r.desc.slice(0, 100) + "..." };
+    const newJob = { company: r.company, role: r.role, status: "To Do", source: r.source, applied_date: new Date().toISOString().slice(0, 10), location: r.location, remote: r.remote, link: r.link, notes: r.desc.slice(0, 100) + "..." };
     try {
       const res = await fetch(`${API_BASE}/jobs`, { method: "POST", headers: authHeaders, body: JSON.stringify(newJob) });
       if (!res.ok) throw new Error("Failed");
@@ -263,7 +263,7 @@ export default function App() {
 
   const stats = useMemo(() => ({
     total: apps.length,
-    applied: apps.filter(a => a.status !== "Wishlist").length,
+    applied: apps.filter(a => a.status !== "To Do").length,
     ivw: apps.filter(a => ["Phone Screen", "Interview"].includes(a.status)).length,
     offers: apps.filter(a => a.status === "Offer").length,
   }), [apps]);
@@ -298,7 +298,7 @@ export default function App() {
     setPage(["settings", "search", "analytics"].includes(id) ? id : "tracker");
     
     if (["wishlist", "ivw", "offers"].includes(id)) {
-      setStF(id === "wishlist" ? "Wishlist" : id === "ivw" ? "Interview" : "Offer");
+      setStF(id === "wishlist" ? "To Do" : id === "ivw" ? "Interview" : "Offer");
     } else { 
       setStF("all"); 
     }
@@ -308,7 +308,7 @@ export default function App() {
     { id: "tracker", icon: "⊞", label: "Tracker", count: apps.length },
     { id: "search", icon: "◎", label: "Job Search", count: jsRes.length || null },
     { id: "analytics", icon: "📊", label: "Analytics", count: null }, // NEW BUTTON HERE
-    { id: "wishlist", icon: "◇", label: "Wishlist", count: apps.filter(a => a.status === "Wishlist").length },
+    { id: "wishlist", icon: "◇", label: "To Do", count: apps.filter(a => a.status === "To Do").length },
     { id: "ivw", icon: "◉", label: "Interviews", count: apps.filter(a => ["Phone Screen", "Interview"].includes(a.status)).length },
     { id: "offers", icon: "✦", label: "Offers", count: apps.filter(a => a.status === "Offer").length },
     { id: "settings", icon: "⚙", label: "Settings", count: null },

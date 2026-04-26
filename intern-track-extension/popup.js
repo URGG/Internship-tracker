@@ -27,7 +27,7 @@ document.addEventListener('DOMContentLoaded', async() => {
             company: companyInput.value,
             role: roleInput.value,
             link: tab.url,
-            status: "Wishlist",
+            status: "To Do",
             source: "Extension"
         };
 
@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', async() => {
 
         // Simulate a save for now
         setTimeout(() => {
-            saveBtn.innerText = "Save to Wishlist ✨";
+            saveBtn.innerText = "Save to To Do ✨";
             statusDiv.innerText = "Saved to Kanban board! ✓";
         }, 800);
     });

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import './KanbanBoard.css';
 
-const COLUMNS = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
+const COLUMNS = ["To Do", "Applied", "Interview", "Offer", "Rejected"];
 
 // We pass the data in from App.jsx so Add and Search work perfectly!
 const KanbanBoard = ({ filtered, setDragId, onDrop, openEdit }) => {

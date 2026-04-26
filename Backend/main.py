@@ -58,7 +58,7 @@ class JobApplication(Base):
     user_id = Column(Integer, ForeignKey("users.id"), index=True)
     company = Column(String, index=True)
     role = Column(String)
-    status = Column(String, default="Wishlist")
+    status = Column(String, default="To Do")
     source = Column(String)
     applied_date = Column(String, default=str(date.today()))
     deadline = Column(String, nullable=True)

@@ -28,7 +28,7 @@ export default function AnalyticsPage({ apps }) {
       .map(date => ({ date, applications: dateMap[date] }));
 
     // 3. Funnel Data (Status Breakdown)
-    const funnelMap = { "Wishlist": 0, "Applied": 0, "Interview": 0, "Offer": 0, "Rejected": 0 };
+    const funnelMap = { "To Do": 0, "Applied": 0, "Interview": 0, "Offer": 0, "Rejected": 0 };
     apps.forEach(app => {
       if (funnelMap[app.status] !== undefined) funnelMap[app.status]++;
     });
@@ -53,7 +53,7 @@ export default function AnalyticsPage({ apps }) {
   }, [apps]);
 
   // Colors for the funnel bars
-  const COLORS = { Wishlist: "#787774", Applied: "#5b7fff", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
+  const COLORS = { "To Do": "#787774", Applied: "#5b7fff", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
   const SOURCE_COLORS = ["#5b7fff", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#38bdf8"];
 
   if (!stats) {
