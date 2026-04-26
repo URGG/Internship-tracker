@@ -1,20 +1,38 @@
 import React, { useState, useEffect, useRef } from 'react';
 
-/**
- * A reusable autocomplete input component.
- * @param {string} type - "city" or "job"
- * @param {string} value - Current value
- * @param {function} onChange - Callback when value changes
- * @param {string} placeholder - Input placeholder
- * @param {string} className - Optional CSS class
- */
+const COMMON_ROLES = [
+  "Software Engineer Intern",
+  "Frontend Engineer Intern",
+  "Backend Engineer Intern",
+  "Fullstack Engineer Intern",
+  "Mobile App Developer Intern",
+  "iOS Developer Intern",
+  "Android Developer Intern",
+  "Data Science Intern",
+  "Machine Learning Intern",
+  "AI Research Intern",
+  "Product Management Intern",
+  "UX/UI Design Intern",
+  "Cybersecurity Intern",
+  "Cloud Engineer Intern",
+  "DevOps Intern",
+  "Data Analyst Intern",
+  "Systems Engineer Intern",
+  "Embedded Systems Intern",
+  "Game Developer Intern",
+  "Web Developer Intern",
+  "QA Engineer Intern",
+  "Hardware Engineer Intern",
+  "Project Management Intern",
+  "Digital Marketing Intern"
+];
+
 const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
   const [suggestions, setSuggestions] = useState([]);
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const wrapperRef = useRef(null);
 
-  // Close suggestions when clicking outside
   useEffect(() => {
     function handleClickOutside(event) {
       if (wrapperRef.current && !wrapperRef.current.contains(event.target)) {
@@ -27,39 +45,28 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Only search if we have at least 2 characters for better responsiveness
       if (!value || value.length < 2 || !show) {
         setSuggestions([]);
         return;
       }
 
+      if (type === 'job') {
+        // Local filtering for job titles
+        const filtered = COMMON_ROLES.filter(role => 
+          role.toLowerCase().includes(value.toLowerCase())
+        );
+        setSuggestions(filtered.slice(0, 6));
+        return;
+      }
+
+      // City Search via Teleport API
       setLoading(true);
       try {
-        let url = '';
-        if (type === 'city') {
-          url = `https://api.teleport.org/api/cities/?search=${encodeURIComponent(value)}`;
-        } else {
-          // Using a free/open endpoint for job titles (Adzuna or similar)
-          // For now, let's use a very common one or a static list if others are down.
-          // Let's try Adzuna's open categories as a fallback or a common search.
-          url = `https://api.adzuna.com/v1/api/jobs/us/categories?app_id=d6273e86&app_key=2647c20a9a407f3521b479d235882e92`;
-          // Note: In a real app, you'd use a better job title specific API.
-          // For this demo, let's keep it simple.
-          if (type === 'job') {
-             // Since specific job title autocomplete APIs are often restricted,
-             // let's stick to city for now or use a small internal list.
-             setLoading(false);
-             return;
-          }
-        }
-
+        const url = `https://api.teleport.org/api/cities/?search=${encodeURIComponent(value)}`;
         const response = await fetch(url);
         const data = await response.json();
-
-        if (type === 'city') {
-          const results = data._embedded?.['city:search-results']?.map(i => i.matching_full_name) || [];
-          setSuggestions(results.slice(0, 5));
-        }
+        const results = data._embedded?.['city:search-results']?.map(i => i.matching_full_name) || [];
+        setSuggestions(results.slice(0, 5));
       } catch (err) {
         console.error("Autocomplete error:", err);
       } finally {
@@ -67,12 +74,11 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
       }
     };
 
-    const timeoutId = setTimeout(fetchData, 400); // 400ms debounce
+    const timeoutId = setTimeout(fetchData, type === 'job' ? 50 : 400); 
     return () => clearTimeout(timeoutId);
   }, [value, type, show]);
 
   const handleSelect = (item) => {
-    // Standard event-like object so it works with any handler
     onChange({ target: { value: item } });
     setSuggestions([]);
     setShow(false);
@@ -99,7 +105,7 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
           top: '100%',
           left: 0,
           right: 0,
-          zIndex: 9999, // Ensure it's above everything
+          zIndex: 9999,
           background: 'var(--s1)',
           border: '1px solid var(--b1)',
           borderRadius: 'var(--r)',

@@ -806,7 +806,7 @@ a {
     background: var(--s1);
     border: 1px solid var(--b0);
     border-radius: var(--rl);
-    overflow: hidden
+    /* Removed overflow: hidden to allow autocomplete dropdowns */
 }
 
 .panel-head {

@@ -131,7 +131,14 @@ export default function SettingsPage({
         </p>
 
         <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-          <input className="finp" style={{ flex: 1 }} placeholder="Keyword (e.g. React Developer)" value={hQ} onChange={e => setHQ(e.target.value)} />
+          <div style={{ flex: 1 }}>
+            <Autocomplete 
+              type="job" 
+              value={hQ} 
+              onChange={e => setHQ(e.target.value)} 
+              placeholder="Keyword (e.g. React Developer)" 
+            />
+          </div>
           <div style={{ flex: 1 }}>
             <Autocomplete 
               type="city" 

@@ -20,7 +20,13 @@ export default function SearchPage({
       <div className="sf-grid">
         <div className="sf-grp">
           <span className="sf-lbl">Keywords</span>
-          <input className="sf-inp" value={jsQ} onChange={(e) => setJsQ(e.target.value)} placeholder="software engineer intern" onKeyDown={(e) => e.key === "Enter" && runSearch()} />
+          <Autocomplete 
+            type="job" 
+            value={jsQ} 
+            onChange={(e) => setJsQ(e.target.value)} 
+            placeholder="software engineer intern" 
+            className="sf-inp"
+          />
         </div>
         <div className="sf-grp">
           <span className="sf-lbl">Location</span>
