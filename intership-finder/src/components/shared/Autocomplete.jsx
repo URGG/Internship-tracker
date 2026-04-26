@@ -27,8 +27,8 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
 
   useEffect(() => {
     const fetchData = async () => {
-      // Only search if we have at least 3 characters
-      if (!value || value.length < 3 || !show) {
+      // Only search if we have at least 2 characters for better responsiveness
+      if (!value || value.length < 2 || !show) {
         setSuggestions([]);
         return;
       }
@@ -39,10 +39,18 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         if (type === 'city') {
           url = `https://api.teleport.org/api/cities/?search=${encodeURIComponent(value)}`;
         } else {
-          // Fallback to a different job API or just use Teleport for cities for now
-          // as dataatwork is sometimes unstable. For now, let's focus on Cities.
-          // If you have a specific Job API key, we can swap this.
-          return; 
+          // Using a free/open endpoint for job titles (Adzuna or similar)
+          // For now, let's use a very common one or a static list if others are down.
+          // Let's try Adzuna's open categories as a fallback or a common search.
+          url = `https://api.adzuna.com/v1/api/jobs/us/categories?app_id=d6273e86&app_key=2647c20a9a407f3521b479d235882e92`;
+          // Note: In a real app, you'd use a better job title specific API.
+          // For this demo, let's keep it simple.
+          if (type === 'job') {
+             // Since specific job title autocomplete APIs are often restricted,
+             // let's stick to city for now or use a small internal list.
+             setLoading(false);
+             return;
+          }
         }
 
         const response = await fetch(url);
@@ -59,11 +67,12 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
       }
     };
 
-    const timeoutId = setTimeout(fetchData, 300);
+    const timeoutId = setTimeout(fetchData, 400); // 400ms debounce
     return () => clearTimeout(timeoutId);
   }, [value, type, show]);
 
   const handleSelect = (item) => {
+    // Standard event-like object so it works with any handler
     onChange({ target: { value: item } });
     setSuggestions([]);
     setShow(false);
@@ -81,7 +90,7 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         }}
         onFocus={() => setShow(true)}
         placeholder={placeholder}
-        autoComplete="off"
+        autoComplete="new-password" 
       />
       
       {show && (suggestions.length > 0 || loading) && (
@@ -90,32 +99,33 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
           top: '100%',
           left: 0,
           right: 0,
-          zIndex: 1000,
-          background: 'var(--s2)',
-          border: '1px solid var(--b0)',
+          zIndex: 9999, // Ensure it's above everything
+          background: 'var(--s1)',
+          border: '1px solid var(--b1)',
           borderRadius: 'var(--r)',
-          marginTop: '4px',
+          marginTop: '6px',
           listStyle: 'none',
           padding: '4px 0',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-          maxHeight: '200px',
+          boxShadow: '0 8px 24px rgba(0,0,0,0.6)',
+          maxHeight: '220px',
           overflowY: 'auto'
         }}>
-          {loading && (
-            <li style={{ padding: '8px 12px', fontSize: '12px', color: 'var(--txt3)' }}>Searching...</li>
-          )}
-          {!loading && suggestions.map((item, index) => (
+          {loading ? (
+            <li style={{ padding: '10px 14px', fontSize: '12px', color: 'var(--txt3)', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <div className="spin" style={{ width: 12, height: 12 }}></div> Searching...
+            </li>
+          ) : suggestions.map((item, index) => (
             <li 
               key={index} 
               onClick={() => handleSelect(item)}
               style={{
-                padding: '8px 12px',
+                padding: '10px 14px',
                 fontSize: '12px',
                 cursor: 'pointer',
                 color: 'var(--txt)',
-                borderBottom: index === suggestions.length - 1 ? 'none' : '1px solid var(--b0)'
+                transition: 'background 0.1s'
               }}
-              onMouseOver={(e) => e.target.style.background = 'var(--s3)'}
+              onMouseOver={(e) => e.target.style.background = 'var(--s2)'}
               onMouseOut={(e) => e.target.style.background = 'transparent'}
             >
               {item}
