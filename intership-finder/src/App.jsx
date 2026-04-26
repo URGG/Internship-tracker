@@ -277,15 +277,18 @@ export default function App() {
     const targetJob = apps.find(x => x.id === dragId);
     if (!targetJob) return;
     
+    // Update date if moving to "Applied"
+    const newDate = status === "Applied" ? new Date().toISOString().slice(0, 10) : targetJob.applied_date;
+
     // Optimistic UI update
-    setApps(a => a.map(x => x.id === dragId ? { ...x, status } : x));
+    setApps(a => a.map(x => x.id === dragId ? { ...x, status, applied_date: newDate } : x));
     setDragId(null); setDragOver(null);
     toast(`→ ${status}`, "#5b7fff");
     
     // Sync with backend
     try {
       await fetch(`${API_BASE}/jobs/${targetJob.id}`, {
-        method: "PUT", headers: authHeaders, body: JSON.stringify({...targetJob, status})
+        method: "PUT", headers: authHeaders, body: JSON.stringify({...targetJob, status, applied_date: newDate})
       });
     } catch { toast("Failed to sync drag with database", "#f87171"); }
   };
