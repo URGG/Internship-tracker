@@ -67,6 +67,14 @@ class JobApplication(Base):
     link = Column(String, nullable=True)
     notes = Column(String, nullable=True)
 
+class SearchSubscription(Base):
+    __tablename__ = "search_subscriptions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    query = Column(String)
+    location = Column(String)
+    job_type = Column(String, default="INTERN")
+
 Base.metadata.create_all(bind=engine)
 
 class UserAuth(BaseModel):
@@ -76,6 +84,11 @@ class UserAuth(BaseModel):
 class KeysUpdate(BaseModel):
     rapid_key: Optional[str] = None
     gemini_key: Optional[str] = None
+
+class SubscriptionCreate(BaseModel):
+    query: str
+    location: str
+    job_type: str
 
 class JobCreate(BaseModel):
     company: str
@@ -205,34 +218,73 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
 
 @app.post("/api/generate-cover")
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
-    if not current_user.enc_gemini_key:
-        raise HTTPException(status_code=400, detail="Missing Gemini Key")
-    try:
-        # Added .strip() to silently fix any accidental spaces pasted into the Settings vault
-        user_gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode().strip()
-    except InvalidToken:
-        raise HTTPException(status_code=500, detail="Key decryption failed")
+    # ... (existing code)
+    pass
+
+@app.get("/api/subscriptions")
+def get_subs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(SearchSubscription).filter(SearchSubscription.user_id == current_user.id).all()
+
+@app.post("/api/subscriptions")
+def add_sub(sub: SubscriptionCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    new_sub = SearchSubscription(**sub.dict(), user_id=current_user.id)
+    db.add(new_sub)
+    db.commit()
+    db.refresh(new_sub)
+    return new_sub
+
+@app.delete("/api/subscriptions/{sub_id}")
+def del_sub(sub_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    db_sub = db.query(SearchSubscription).filter(SearchSubscription.id == sub_id, SearchSubscription.user_id == current_user.id).first()
+    if not db_sub: raise HTTPException(status_code=404, detail="Subscription not found")
+    db.delete(db_sub)
+    db.commit()
+    return {"message": "Unsubscribed"}
+
+@app.post("/api/hunter/run")
+def run_hunter(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.enc_rapid_key:
+        raise HTTPException(status_code=400, detail="Add RapidAPI Key in Settings first")
     
-    try:
-        # 1. Use the official SDK you already imported
-        genai.configure(api_key=user_gemini_key)
-        model = genai.GenerativeModel('gemini-2.5-flash')
+    user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    subs = db.query(SearchSubscription).filter(SearchSubscription.user_id == current_user.id).all()
+    
+    if not subs:
+        return {"message": "No active hunts. Add some keywords first!", "added": 0}
+
+    # Get existing links to avoid duplicates
+    existing_links = {j.link for j in db.query(JobApplication).filter(JobApplication.user_id == current_user.id).all() if j.link}
+    new_jobs_count = 0
+
+    for sub in subs:
+        url = "https://jsearch.p.rapidapi.com/search"
+        params = {"query": f"{sub.query} in {sub.location}", "page": "1", "num_pages": "1", "date_posted": "week", "employment_types": sub.job_type}
+        headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
         
-        # 2. Build the prompt
-        prompt = f"""
-        Write a compelling internship cover letter. 
-        Company: {req.company}. 
-        Role: {req.role}. 
-        Job Description: {req.description}. 
-        My Background: {req.context}. 
-        Requirements: 3 tight paragraphs, under 250 words, no placeholders. Be direct, professional, and highlight my specific technical skills that match the role.
-        """
-        
-        # 3. Generate
-        response = model.generate_content(prompt)
-        return {"text": response.text}
-        
-    except Exception as e:
-        # 4. Expose the REAL error so we can actually fix it!
-        print(f" Gemini API Crash Details: {str(e)}") 
-        raise HTTPException(status_code=500, detail=f"Google API Error: {str(e)}")
+        try:
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            if response.status_code == 200:
+                data = response.json().get("data", [])
+                for j in data:
+                    link = j.get("job_apply_link") or j.get("job_google_link")
+                    if link and link not in existing_links:
+                        new_job = JobApplication(
+                            user_id=current_user.id,
+                            company=j.get("employer_name", "Unknown"),
+                            role=j.get("job_title", "Role"),
+                            status="To Do",
+                            source="Auto-Hunter",
+                            applied_date=str(date.today()),
+                            location=f"{j.get('job_city', '')}, {j.get('job_state', '')}".strip(", "),
+                            remote=bool(j.get("job_is_remote")),
+                            link=link,
+                            notes=(j.get("job_description") or "")[:200]
+                        )
+                        db.add(new_job)
+                        existing_links.add(link)
+                        new_jobs_count += 1
+        except Exception as e:
+            print(f"Hunter failed for {sub.query}: {str(e)}")
+
+    db.commit()
+    return {"message": f"Hunter finished! Found {new_jobs_count} new opportunities.", "added": new_jobs_count}

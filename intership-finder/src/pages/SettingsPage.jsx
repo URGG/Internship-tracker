@@ -4,7 +4,10 @@ import * as pdfjsLib from 'pdfjs-dist';
 // We have to point PDF.js to its worker script so it doesn't freeze your app
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, setResumeTxt, saveUserKeys }) {
+export default function SettingsPage({ 
+  rKey, setRKey, gKey, setGKey, resumeTxt, setResumeTxt, saveUserKeys,
+  subs, addHunt, delHunt, runHunter, hQ, setHQ, hL, setHL, hLoading
+}) {
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
 
@@ -32,14 +35,10 @@ export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, 
     setIsReading(true);
     
     try {
-      // 1. Convert the file to an ArrayBuffer
       const arrayBuffer = await file.arrayBuffer();
-      
-      // 2. Load the PDF using pdfjs
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let extractedText = "";
 
-      // 3. Loop through every page and pull out the text
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
@@ -47,7 +46,6 @@ export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, 
         extractedText += pageText + "\n\n";
       }
 
-      // 4. Save it to your app state!
       setResumeTxt(extractedText.trim());
       
     } catch (err) {
@@ -59,7 +57,7 @@ export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, 
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto" }}>
+    <div style={{ maxWidth: 800, margin: "0 auto", paddingBottom: "40px" }}>
       
       {/* API KEYS VAULT */}
       <div className="scard">
@@ -87,7 +85,6 @@ export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, 
           Drop your PDF resume here, and we will extract the text for the AI context.
         </p>
 
-        {/* The Dropzone */}
         <div 
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
@@ -116,7 +113,6 @@ export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, 
           )}
         </div>
 
-        {/* The Text Fallback (In case they need to edit it manually after dropping) */}
         <textarea 
           className="finp fta"
           placeholder="Or paste your text manually here..."
@@ -126,6 +122,38 @@ export default function SettingsPage({ rKey, setRKey, gKey, setGKey, resumeTxt, 
         />
       </div>
 
+      {/* AUTO-HUNTER MANAGEMENT */}
+      <div className="scard">
+        <h3>Auto-Hunter Management</h3>
+        <p style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "16px" }}>
+          The hunter will automatically search for these keywords and add new jobs to your To Do list.
+        </p>
+
+        <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
+          <input className="finp" style={{ flex: 1 }} placeholder="Keyword (e.g. React Developer)" value={hQ} onChange={e => setHQ(e.target.value)} />
+          <input className="finp" style={{ flex: 1 }} placeholder="Location (e.g. New York)" value={hL} onChange={e => setHL(e.target.value)} />
+          <button className="mbtn mbtn-p" onClick={addHunt}>Add Hunt</button>
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+          {subs.map(s => (
+            <div key={s.id} className="link-row" style={{ padding: "10px 16px" }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: "13px", fontWeight: "600" }}>{s.query}</div>
+                <div style={{ fontSize: "11px", color: "var(--txt3)" }}>{s.location} • {s.job_type}</div>
+              </div>
+              <button className="mbtn-d" style={{ padding: "4px 8px", fontSize: "11px" }} onClick={() => delHunt(s.id)}>Remove</button>
+            </div>
+          ))}
+          {subs.length === 0 && <div className="note">No active hunts. Add some keywords above!</div>}
+        </div>
+
+        <div style={{ marginTop: "24px", paddingTop: "24px", borderTop: "1px solid var(--b0)" }}>
+          <button className="mbtn mbtn-p" style={{ width: "100%", height: "44px" }} onClick={runHunter} disabled={hLoading}>
+            {hLoading ? "Hunter is searching..." : "🚀 Run Hunter Now"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

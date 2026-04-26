@@ -128,6 +128,12 @@ export default function App() {
 
   const [toasts, setToasts] = useState([]);
 
+  // Auto-Hunter State
+  const [subs, setSubs] = useState([]);
+  const [hQ, setHQ] = useState("");
+  const [hL, setHL] = useState("");
+  const [hLoading, setHLoading] = useState(false);
+
   const toast = (msg, color = "#34d399") => {
     const id = uid();
     setToasts((t) => [...t, { id, msg, color }]);
@@ -136,13 +142,18 @@ export default function App() {
 
   useEffect(() => { localStorage.setItem("resumeTxt", resumeTxt); }, [resumeTxt]);
 
-  // Fetch Jobs on Login
+  // Fetch Jobs & Subscriptions on Login
   useEffect(() => {
-    if (!token) { setApps([]); return; }
-    fetch(`${API_BASE}/jobs`, { headers: { "Authorization": `Bearer ${token}` } })
+    if (!token) { setApps([]); setSubs([]); return; }
+    const headers = { "Authorization": `Bearer ${token}` };
+    
+    fetch(`${API_BASE}/jobs`, { headers })
       .then(res => res.json())
-      .then(data => { if (Array.isArray(data)) setApps(data); })
-      .catch(() => toast("Failed to load jobs", "#f87171"));
+      .then(data => { if (Array.isArray(data)) setApps(data); });
+
+    fetch(`${API_BASE}/subscriptions`, { headers })
+      .then(res => res.json())
+      .then(data => { if (Array.isArray(data)) setSubs(data); });
   }, [token]);
 
   const handleLogout = () => {
@@ -150,6 +161,7 @@ export default function App() {
     localStorage.removeItem("username");
     setToken(null);
     setApps([]);
+    setSubs([]);
     setPage("tracker");
     toast("Logged out securely", "#8b91b8");
   };
@@ -161,6 +173,52 @@ export default function App() {
 
   // --- API ROUTING ---
   const authHeaders = { "Content-Type": "application/json", "Authorization": `Bearer ${token}` };
+
+  const addHunt = async () => {
+    if (!requireAuth() || !hQ.trim()) return;
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions`, {
+        method: "POST", headers: authHeaders,
+        body: JSON.stringify({ query: hQ, location: hL || "Remote", job_type: "INTERN" })
+      });
+      if (!res.ok) throw new Error("Failed to add hunt");
+      const newSub = await res.json();
+      setSubs(s => [...s, newSub]);
+      setHQ(""); setHL("");
+      toast("Hunt active! 🎯");
+    } catch (e) { toast(e.message, "#f87171"); }
+  };
+
+  const delHunt = async (id) => {
+    if (!requireAuth()) return;
+    try {
+      const res = await fetch(`${API_BASE}/subscriptions/${id}`, { method: "DELETE", headers: authHeaders });
+      if (!res.ok) throw new Error("Failed to remove");
+      setSubs(s => s.filter(x => x.id !== id));
+      toast("Unsubscribed");
+    } catch (e) { toast(e.message, "#f87171"); }
+  };
+
+  const runHunter = async () => {
+    if (!requireAuth()) return;
+    setHLoading(true);
+    try {
+      const res = await fetch(`${API_BASE}/hunter/run`, { method: "POST", headers: authHeaders });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Hunter failed");
+      
+      if (data.added > 0) {
+        // Refresh jobs list
+        const jobsRes = await fetch(`${API_BASE}/jobs`, { headers: authHeaders });
+        const jobsData = await jobsRes.json();
+        setApps(jobsData);
+        toast(`Found ${data.added} new jobs! 🚀`, "#34d399");
+      } else {
+        toast("No new jobs found today.", "#9b9a97");
+      }
+    } catch (e) { toast(e.message, "#f87171"); }
+    finally { setHLoading(false); }
+  };
 
   const saveUserKeys = async () => {
     if (!requireAuth()) return;
@@ -382,7 +440,7 @@ export default function App() {
             {page === "tracker" && <KanbanBoard filtered={filtered} setDragId={setDragId} onDrop={onDrop} openEdit={openEdit} />}
             {page === "search" && <SearchPage jsQ={jsQ} setJsQ={setJsQ} jsLoc={jsLoc} setJsLoc={setJsLoc} jsType={jsType} setJsType={setJsType} jsDate={jsDate} setJsDate={setJsDate} runSearch={runSearch} jsLoad={jsLoad} jsErr={jsErr} jsRes={jsRes} jsAdded={jsAdded} addFromSearch={saveSearchJob} />}
             {page === "analytics" && <AnalyticsPage apps={apps} />}
-            {page === "settings" && <SettingsPage rKey={rKey} setRKey={setRKey} gKey={gKey} setGKey={setGKey} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} saveUserKeys={saveUserKeys} />}
+            {page === "settings" && <SettingsPage rKey={rKey} setRKey={setRKey} gKey={gKey} setGKey={setGKey} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} saveUserKeys={saveUserKeys} subs={subs} addHunt={addHunt} delHunt={delHunt} runHunter={runHunter} hQ={hQ} setHQ={setHQ} hL={hL} setHL={setHL} hLoading={hLoading} />}
           </div>
 
         </div>
