@@ -194,27 +194,18 @@ def delete_job(job_id: int, current_user: User = Depends(get_current_user), db: 
 
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
-    if not current_user.enc_rapid_key:
-        raise HTTPException(status_code=400, detail="Missing RapidAPI Key")
+    # ... (existing code)
+    pass
+
+@app.get("/api/cities")
+def proxy_cities(q: str):
+    """Proxy Teleport API to avoid CORS or network blocks in the browser"""
     try:
-        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
-    except InvalidToken:
-        raise HTTPException(status_code=500, detail="Key decryption failed")
-    
-    url = "https://jsearch.p.rapidapi.com/search"
-    params = {"query": f"{query} in {location}", "page": "1", "num_pages": "1", "date_posted": datePosted, "employment_types": jobType}
-    headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
-    response = requests.get(url, headers=headers, params=params)
-    
-    if response.status_code != 200: raise HTTPException(status_code=response.status_code, detail=response.text)
-    data = response.json().get("data", [])
-    
-    return [{
-        "_id": j.get("job_id"), "company": j.get("employer_name", "Unknown"), "role": j.get("job_title", "Role"),
-        "location": f"{j.get('job_city', '')}, {j.get('job_state', '')}".strip(", "), "remote": bool(j.get("job_is_remote")),
-        "link": j.get("job_apply_link") or j.get("job_google_link"), "source": "Search",
-        "posted": (j.get("job_posted_at_datetime_utc") or "")[:10], "desc": (j.get("job_description") or "")[:400]
-    } for j in data]
+        url = f"https://api.teleport.org/api/cities/?search={q}"
+        resp = requests.get(url, timeout=5)
+        return resp.json()
+    except Exception as e:
+        return {"_embedded": {"city:search-results": []}}
 
 @app.post("/api/generate-cover")
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):

@@ -1,5 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+// Use same base as App.jsx
+const API_BASE = "https://internship-tracker-1-9w2v.onrender.com/api";
+
 const COMMON_ROLES = [
   "Software Engineer Intern", "Frontend Engineer Intern", "Backend Engineer Intern",
   "Fullstack Engineer Intern", "Mobile App Developer Intern", "Data Science Intern",
@@ -23,7 +26,6 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
   const [show, setShow] = useState(false);
   const [loading, setLoading] = useState(false);
   const [noResults, setNoResults] = useState(false);
-  const [error, setError] = useState(null);
   const wrapperRef = useRef(null);
 
   useEffect(() => {
@@ -39,14 +41,13 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
   useEffect(() => {
     const fetchData = async () => {
       setNoResults(false);
-      setError(null);
 
       if (!value || value.length < 2 || !show) {
         setSuggestions([]);
         return;
       }
 
-      // 1. LOCAL SEARCH FIRST (Instant & Reliable)
+      // Local matches always instant
       const list = type === 'job' ? COMMON_ROLES : TECH_CITIES;
       const localMatches = list.filter(item => 
         item.toLowerCase().includes(value.toLowerCase())
@@ -58,28 +59,22 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         return;
       }
 
-      // 2. REMOTE SEARCH FOR CITIES
       setLoading(true);
       try {
-        const url = `https://api.teleport.org/api/cities/?search=${encodeURIComponent(value)}`;
+        // Proxy call to backend to avoid browser blocks
+        const url = `${API_BASE}/cities?q=${encodeURIComponent(value)}`;
         const response = await fetch(url);
-        
-        if (!response.ok) throw new Error("API Limit Reached");
-        
         const data = await response.json();
+        
         let apiResults = data._embedded?.['city:search-results']?.map(i => i.matching_full_name) || [];
         
-        // Merge local tech hubs with API results, removing duplicates
         const combined = Array.from(new Set([...localMatches, ...apiResults]));
-        
         setSuggestions(combined.slice(0, 7));
         setNoResults(combined.length === 0);
       } catch (err) {
-        console.error("Autocomplete fetch error:", err);
-        // Fallback strictly to local matches if API fails
+        console.error("Autocomplete proxy error:", err);
         setSuggestions(localMatches.slice(0, 7));
         setNoResults(localMatches.length === 0);
-        if (localMatches.length === 0) setError("Connection issues");
       } finally {
         setLoading(false);
       }
@@ -111,7 +106,7 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         style={{ width: '100%' }}
       />
       
-      {show && (loading || suggestions.length > 0 || noResults || error) && (
+      {show && (loading || suggestions.length > 0 || noResults) && (
         <div style={{
           position: 'absolute',
           top: 'calc(100% + 5px)',
@@ -131,7 +126,7 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
             </div>
           ) : noResults ? (
             <div style={{ padding: '12px 16px', color: '#777', fontSize: '13px' }}>
-              {error ? "API connection issue" : "No matches found"}
+              No matches found
             </div>
           ) : (
             suggestions.map((item, index) => (
