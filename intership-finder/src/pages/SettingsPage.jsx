@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import * as pdfjsLib from 'pdfjs-dist';
+import Autocomplete from '../components/shared/Autocomplete';
 
 // We have to point PDF.js to its worker script so it doesn't freeze your app
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -131,7 +132,14 @@ export default function SettingsPage({
 
         <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
           <input className="finp" style={{ flex: 1 }} placeholder="Keyword (e.g. React Developer)" value={hQ} onChange={e => setHQ(e.target.value)} />
-          <input className="finp" style={{ flex: 1 }} placeholder="Location (e.g. New York)" value={hL} onChange={e => setHL(e.target.value)} />
+          <div style={{ flex: 1 }}>
+            <Autocomplete 
+              type="city" 
+              value={hL} 
+              onChange={e => setHL(e.target.value)} 
+              placeholder="Location (e.g. New York)" 
+            />
+          </div>
           <button className="mbtn mbtn-p" onClick={addHunt}>Add Hunt</button>
         </div>
 

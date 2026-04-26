@@ -1,5 +1,6 @@
 import { JOB_TYPES, DATE_OPTS } from '../utils/constants';
 import { srcTag } from '../utils/helpers';
+import Autocomplete from '../components/shared/Autocomplete';
 
 export default function SearchPage({
   jsQ, setJsQ, jsLoc, setJsLoc, jsType, setJsType,
@@ -23,7 +24,13 @@ export default function SearchPage({
         </div>
         <div className="sf-grp">
           <span className="sf-lbl">Location</span>
-          <input className="sf-inp" value={jsLoc} onChange={(e) => setJsLoc(e.target.value)} placeholder="San Francisco, CA" onKeyDown={(e) => e.key === "Enter" && runSearch()} />
+          <Autocomplete 
+            type="city" 
+            value={jsLoc} 
+            onChange={(e) => setJsLoc(e.target.value)} 
+            placeholder="San Francisco, CA" 
+            className="sf-inp"
+          />
         </div>
         <div className="sf-grp">
           <span className="sf-lbl">Job type</span>
