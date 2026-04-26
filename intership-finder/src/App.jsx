@@ -10,7 +10,7 @@ import SettingsPage from "./pages/SettingsPage";
 import Modal from "./components/shared/Modal";
 
 // Changed to localhost to prevent CORS/Fetch errors
-const API_BASE = "https://internship-tracker-1-9w2v.onrender.com/api";
+const API_BASE = "http://127.0.0.1:8000/api";
 
 // --- LOGIN MODAL COMPONENT ---
 const LoginModal = ({ show, setShow, setToken, toast }) => {
@@ -181,9 +181,9 @@ export default function App() {
         method: "POST", headers: authHeaders,
         body: JSON.stringify({ query: hQ, location: hL || "Remote", job_type: "INTERN" })
       });
-      if (!res.ok) throw new Error("Failed to add hunt");
-      const newSub = await res.json();
-      setSubs(s => [...s, newSub]);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to add hunt");
+      setSubs(s => [...s, data]);
       setHQ(""); setHL("");
       toast("Hunt active! 🎯");
     } catch (e) { toast(e.message, "#f87171"); }
