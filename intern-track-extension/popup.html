@@ -88,12 +88,26 @@
     <h2>
         <div class="logo-mark">i</div> intern.track</h2>
 
-    <div id="app-form">
+    <!-- LOGIN VIEW -->
+    <div id="login-view" style="display: none;">
+        <label>Username</label>
+        <input type="text" id="login-user" />
+        <label>Password</label>
+        <input type="password" id="login-pass" />
+        <button id="login-btn">Log In to Sync</button>
+        <div id="login-status" style="font-size: 11px; margin-top: 8px; text-align: center;"></div>
+    </div>
+
+    <!-- JOB FORM VIEW -->
+    <div id="app-form" style="display: none;">
         <label>Company</label>
         <input type="text" id="company" placeholder="e.g. Google" />
 
         <label>Role</label>
         <input type="text" id="role" placeholder="e.g. Software Engineer Intern" />
+
+        <label>Description (Auto-scraped)</label>
+        <textarea id="description" style="width: 100%; height: 80px; background: #252525; border: 1px solid #3f3f3f; border-radius: 6px; color: #ebebeb; font-size: 11px; padding: 8px; margin-bottom: 12px; resize: none; font-family: inherit;"></textarea>
 
         <button id="save-btn">Save to To Do ✨</button>
         <div id="status"></div>
