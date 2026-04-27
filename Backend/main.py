@@ -76,6 +76,7 @@ class SearchSubscription(Base):
     job_type = Column(String, default="INTERN")
 
 Base.metadata.create_all(bind=engine)
+VALID_STATUSES = {"To Do", "Applied", "Phone Screen", "Interview", "Offer", "Rejected"}
 
 class UserAuth(BaseModel):
     username: str
@@ -139,6 +140,27 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None: raise HTTPException(status_code=401, detail="User not found")
     return user
 
+def normalize_job_payload(job: JobCreate):
+    payload = job.dict()
+    payload["status"] = payload["status"].strip()
+    payload["source"] = (payload["source"] or "Other").strip() or "Other"
+
+    if payload["status"] not in VALID_STATUSES:
+        raise HTTPException(status_code=400, detail="Invalid application status")
+
+    if payload["applied_date"] == "":
+        payload["applied_date"] = None
+    if payload["deadline"] == "":
+        payload["deadline"] = None
+    if payload["location"] == "":
+        payload["location"] = None
+    if payload["link"] == "":
+        payload["link"] = None
+    if payload["notes"] == "":
+        payload["notes"] = None
+
+    return payload
+
 @app.post("/api/signup")
 def signup(user: UserAuth, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == user.username).first():
@@ -172,7 +194,7 @@ def get_jobs(current_user: User = Depends(get_current_user), db: Session = Depen
 
 @app.post("/api/jobs")
 def create_job(job: JobCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    new_job = JobApplication(**job.dict(), user_id=current_user.id)
+    new_job = JobApplication(**normalize_job_payload(job), user_id=current_user.id)
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
@@ -182,7 +204,7 @@ def create_job(job: JobCreate, current_user: User = Depends(get_current_user), d
 def update_job(job_id: int, job: JobCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db_job = db.query(JobApplication).filter(JobApplication.id == job_id, JobApplication.user_id == current_user.id).first()
     if not db_job: raise HTTPException(status_code=404, detail="Job not found")
-    for key, value in job.dict().items():
+    for key, value in normalize_job_payload(job).items():
         setattr(db_job, key, value)
     db.commit()
     db.refresh(db_job)

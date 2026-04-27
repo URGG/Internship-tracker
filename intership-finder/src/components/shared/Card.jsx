@@ -14,7 +14,7 @@ export default function Card({ app, setDragId, openEdit }) {
         {app.remote && <span className="tag t-rm">remote</span>}
         {du !== null && du <= 3 && <span className="tag t-warn">due {fmt(app.deadline)}</span>}
         {du !== null && du > 3 && du <= 7 && <span className="tag t-soon">due {fmt(app.deadline)}</span>}
-        {app.date && <span className="jcard-date">{fmt(app.date)}</span>}
+        {app.applied_date && <span className="jcard-date">{fmt(app.applied_date)}</span>}
       </div>
     </div>
   );

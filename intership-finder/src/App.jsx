@@ -1,16 +1,14 @@
 import { useState, useMemo, useEffect } from "react";
-import { STATUSES, BLANK } from "./utils/constants";
+import { BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import KanbanBoard from './KanbanBoard';
 import ThemeToggle from "./components/shared/ThemeToggle";
 import AnalyticsPage from "./pages/AnalyticsPage";
-import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import Modal from "./components/shared/Modal";
 
-// Changed back to production Render backend
-const API_BASE = "https://internship-tracker-1-9w2v.onrender.com/api";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000/api";
 
 // --- LOGIN MODAL COMPONENT ---
 const LoginModal = ({ show, setShow, setToken, toast }) => {
@@ -100,8 +98,6 @@ export default function App() {
   const [stF, setStF] = useState("all");
   const [q, setQ] = useState("");
   const [dragId, setDragId] = useState(null);
-  const [dragOver, setDragOver] = useState(null);
-
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK);
   const [eid, setEid] = useState(null);
@@ -292,18 +288,18 @@ export default function App() {
       if (!res.ok) throw new Error("Failed");
       const savedJob = await res.json();
       setApps(a => [...a, savedJob]);
-      setJsAdded(new Set([...jsAdded, r._id]));
+      setJsAdded(prev => new Set([...prev, r._id]));
       toast(`Added ${r.company}`);
     } catch (e) { toast("Failed to add job", "#f87171"); }
   };
 
   const genCover = async () => {
-    if (!requireAuth() || !coverJob.trim()) return;
+    if (!requireAuth()) return;
     setCoverLoad(true); setCoverOut("");
     try {
       const res = await fetch(`${API_BASE}/generate-cover`, {
         method: "POST", headers: authHeaders,
-        body: JSON.stringify({ company: coverApp.company, role: coverApp.role, description: coverJob, context: resumeTxt })
+        body: JSON.stringify({ company: coverApp.company, role: coverApp.role, description: coverJob || "", context: resumeTxt })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "AI generation failed");
@@ -359,7 +355,7 @@ export default function App() {
 
     // Optimistic UI update
     setApps(a => a.map(x => x.id === dragId ? { ...x, status, applied_date: newDate } : x));
-    setDragId(null); setDragOver(null);
+    setDragId(null);
     toast(`→ ${status}`, "#5b7fff");
     
     // Sync with backend
@@ -403,7 +399,7 @@ export default function App() {
           ))}
           <div className="sb-div" /><span className="sb-sect">Filter by stage</span>
           {navItems.slice(3, 6).map(n => (
-            <button key={n.id} className={`sb-btn${stF === n.label ? " on" : ""}`} onClick={() => handleNav(n.id)}>
+            <button key={n.id} className={`sb-btn${(n.id === "wishlist" && stF === "To Do") || (n.id === "ivw" && stF === "Interview") || (n.id === "offers" && stF === "Offer") ? " on" : ""}`} onClick={() => handleNav(n.id)}>
               <span className="sb-icon">{n.icon}</span>{n.label} <span className="sb-badge">{n.count}</span>
             </button>
           ))}
@@ -428,7 +424,7 @@ export default function App() {
           
           <div className="topbar">
             <div className="topbar-title">
-              {page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : "Settings"}
+              {page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : page === "analytics" ? "Analytics" : "Settings"}
             </div>
             
             {!token ? (

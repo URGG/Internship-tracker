@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import './KanbanBoard.css';
-
-const COLUMNS = ["To Do", "Applied", "Interview", "Offer", "Rejected"];
+import { KCOLS } from './utils/constants';
 
 // We pass the data in from App.jsx so Add and Search work perfectly!
 const KanbanBoard = ({ filtered, setDragId, onDrop, openEdit }) => {
@@ -45,7 +44,7 @@ const KanbanBoard = ({ filtered, setDragId, onDrop, openEdit }) => {
   return (
     <div className="kanban-container">
       <div className="kanban-board">
-        {COLUMNS.map(col => (
+        {KCOLS.map(col => (
           <div 
             key={col} 
             /* NEW: Dynamically add the 'drag-over' class if this is the hovered column */

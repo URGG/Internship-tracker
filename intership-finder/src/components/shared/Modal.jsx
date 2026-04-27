@@ -1,4 +1,5 @@
 import React from 'react';
+import { STATUSES } from '../../utils/constants';
 
 export default function Modal({
   modal, setModal, form, setForm, setF, eid, save, del,
@@ -8,8 +9,6 @@ export default function Modal({
 }) {
   
   if (!modal) return null;
-
-  const STATUSES = ["Wishlist", "Applied", "Interview", "Offer", "Rejected"];
 
   // Helper to copy the generated letter to your clipboard
   const handleCopy = () => {
@@ -60,7 +59,7 @@ export default function Modal({
               <div className="fg2">
                 <div className="frow">
                   <span className="flbl">Status</span>
-                  <select className="finp" value={form.status || "Wishlist"} onChange={setF("status")}>
+                  <select className="finp" value={form.status || "To Do"} onChange={setF("status")}>
                     {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
                 </div>
@@ -87,6 +86,22 @@ export default function Modal({
               <div className="frow">
                 <span className="flbl">Application Link</span>
                 <input className="finp" value={form.link || ""} onChange={setF("link")} placeholder="https://..." />
+              </div>
+
+              <div className="fg2">
+                <div className="frow">
+                  <span className="flbl">Source</span>
+                  <input className="finp" value={form.source || ""} onChange={setF("source")} placeholder="e.g. LinkedIn" />
+                </div>
+                <div className="frow">
+                  <span className="flbl">Deadline</span>
+                  <input className="finp" type="date" value={form.deadline || ""} onChange={setF("deadline")} />
+                </div>
+              </div>
+
+              <div className="frow">
+                <span className="flbl">Notes</span>
+                <textarea className="finp fta" value={form.notes || ""} onChange={setF("notes")} style={{ minHeight: "100px" }} />
               </div>
             </div>
 

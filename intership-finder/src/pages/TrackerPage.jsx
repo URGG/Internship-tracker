@@ -70,7 +70,7 @@ export default function TrackerPage({
                     <td style={{ color: "var(--txt2)", fontSize: 12 }}>{a.role}</td>
                     <td><span className={`spill ${SP[a.status] || "sw"}`}><span className={`kdot ${SD[a.status]}`} style={{ width: 6, height: 6 }} />{a.status}</span></td>
                     <td><span className={`tag ${srcTag(a.source)}`}>{a.source}</span></td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--txt3)" }}>{fmt(a.date)}</td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--txt3)" }}>{fmt(a.applied_date)}</td>
                     <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: du !== null && du <= 3 ? "var(--red)" : du !== null && du <= 7 ? "var(--amb)" : "var(--txt3)" }}>{fmt(a.deadline)}</td>
                     <td onClick={(e) => { e.stopPropagation(); openCover(a); }}><button className="rbtn">AI cover ↗</button></td>
                   </tr>
