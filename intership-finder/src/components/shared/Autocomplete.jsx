@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-
-// Use same base as App.jsx
-const API_BASE = "https://internship-tracker-1-9w2v.onrender.com/api";
+import { API_BASE } from '../../config';
 
 const COMMON_ROLES = [
   "Software Engineer Intern", "Frontend Engineer Intern", "Backend Engineer Intern",
@@ -106,8 +104,7 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         const combined = rankSuggestions(Array.from(new Set([...localMatches, ...apiResults])), value);
         setSuggestions(combined.slice(0, 7));
         setNoResults(combined.length === 0);
-      } catch (err) {
-        console.error("Autocomplete proxy error:", err);
+      } catch {
         setSuggestions(localMatches.slice(0, 7));
         setNoResults(localMatches.length === 0);
       } finally {

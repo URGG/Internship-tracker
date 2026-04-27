@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
+import { API_BASE } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import TrackerPage from "./pages/TrackerPage";
@@ -11,7 +12,6 @@ const SearchPage = lazy(() => import("./pages/SearchPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const Modal = lazy(() => import("./components/shared/Modal"));
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://internship-tracker-1-9w2v.onrender.com/api";
 const APPS_CACHE_KEY = "appsCache";
 const SUBS_CACHE_KEY = "subsCache";
 
