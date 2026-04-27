@@ -29,6 +29,14 @@ const paths = {
       <path d="M16 16v-6.5" />
     </>
   ),
+  pricing: (
+    <>
+      <rect x="4.5" y="6" width="15" height="12" rx="2" />
+      <path d="M4.5 10h15" />
+      <path d="M8 14.25h3.5" />
+      <path d="M14.5 14.25h1.5" />
+    </>
+  ),
   todo: (
     <>
       <rect x="5" y="5" width="14" height="14" rx="2" />

@@ -6,6 +6,7 @@ import ThemeToggle from "./components/shared/ThemeToggle";
 import TrackerPage from "./pages/TrackerPage";
 
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const PricingPage = lazy(() => import("./pages/PricingPage"));
 const SearchPage = lazy(() => import("./pages/SearchPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const Modal = lazy(() => import("./components/shared/Modal"));
@@ -677,7 +678,7 @@ export default function App() {
   };
 
   const handleNav = (id) => {
-    setPage(["settings", "search", "analytics"].includes(id) ? id : "tracker");
+    setPage(["settings", "search", "analytics", "pricing"].includes(id) ? id : "tracker");
     if (["wishlist", "ivw", "offers"].includes(id)) {
       setStF(id === "wishlist" ? "To Do" : id === "ivw" ? "Interview" : "Offer");
     } else {
@@ -689,6 +690,7 @@ export default function App() {
     { id: "tracker", icon: "tracker", label: "Tracker", count: apps.length },
     { id: "search", icon: "search", label: "Job Search", count: jsRes.length || null },
     { id: "analytics", icon: "analytics", label: "Analytics", count: null },
+    { id: "pricing", icon: "pricing", label: "Pricing", count: null },
     { id: "wishlist", icon: "todo", label: "To Do", count: apps.filter((a) => a.status === "To Do").length },
     { id: "ivw", icon: "interview", label: "Interviews", count: apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length },
     { id: "offers", icon: "offer", label: "Offers", count: apps.filter((a) => a.status === "Offer").length },
@@ -706,7 +708,7 @@ export default function App() {
             </div>
           </div>
           <span className="sb-sect">Navigate</span>
-          {navItems.slice(0, 3).map((n) => (
+          {navItems.slice(0, 4).map((n) => (
             <button key={n.id} className={`sb-btn${page === n.id ? " on" : ""}`} onClick={() => handleNav(n.id)}>
               <span className="sb-icon"><Icon name={n.icon} size={16} /></span>
               {n.label} {n.count !== null && <span className="sb-badge">{n.count}</span>}
@@ -714,7 +716,7 @@ export default function App() {
           ))}
           <div className="sb-div" />
           <span className="sb-sect">Filter by stage</span>
-          {navItems.slice(3, 6).map((n) => (
+          {navItems.slice(4, 7).map((n) => (
             <button
               key={n.id}
               className={`sb-btn${
@@ -751,7 +753,9 @@ export default function App() {
 
         <div className="main">
           <div className="topbar">
-            <div className="topbar-title">{page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : page === "analytics" ? "Analytics" : "Settings"}</div>
+            <div className="topbar-title">
+              {page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : page === "analytics" ? "Analytics" : page === "pricing" ? "Pricing" : "Settings"}
+            </div>
 
             {!token ? (
               <button className="tbtn tbtn-p" onClick={() => setShowLogin(true)} style={{ marginLeft: "auto" }}>
@@ -824,6 +828,11 @@ export default function App() {
             {page === "analytics" && (
               <Suspense fallback={<PanelFallback label="Loading analytics..." />}>
                 <AnalyticsPage apps={apps} onExportCsv={exportJobsCsv} onExportJson={exportJobsJson} />
+              </Suspense>
+            )}
+            {page === "pricing" && (
+              <Suspense fallback={<PanelFallback label="Loading pricing..." />}>
+                <PricingPage />
               </Suspense>
             )}
             {page === "settings" && (
