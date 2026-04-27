@@ -61,18 +61,36 @@ export default function SettingsPage({
   return (
     <div style={{ maxWidth: 900, margin: "0 auto", paddingBottom: "40px" }}>
       <div className="scard">
-        <h3>User API Keys (Encrypted Vault)</h3>
-        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Your keys are encrypted in the database. They are never stored in plain text.</p>
+        <h3>Free Mode</h3>
+        <p style={{ fontSize: 12, color: "var(--txt2)", marginBottom: 12 }}>
+          The tracker works without any API keys. Applications, reminders, analytics, timeline, and exports are all available for free.
+        </p>
+        <div className="note" style={{ marginTop: 0 }}>
+          Add your own keys only if you want advanced extras like live job search, AI cover letters, resume match, follow-up drafts, company intel, or auto-hunter.
+        </div>
+      </div>
+
+      <div className="scard">
+        <h3>Optional API Keys</h3>
+        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>
+          Keys are optional and only unlock paid external services. They are encrypted in the database and never stored in plain text.
+        </p>
         <div className="srow">
           <label>RapidAPI Key</label>
           <input type="password" value={rKey} onChange={(e) => setRKey(e.target.value)} placeholder="Paste JSearch key here..." />
+        </div>
+        <div className="note" style={{ marginBottom: 14 }}>
+          Used for: live job search and auto-hunter.
         </div>
         <div className="srow">
           <label>Gemini API Key</label>
           <input type="password" value={gKey} onChange={(e) => setGKey(e.target.value)} placeholder="Paste Gemini key here..." />
         </div>
+        <div className="note" style={{ marginBottom: 14 }}>
+          Used for: AI cover letters, resume match, follow-up drafts, and company intel.
+        </div>
         <button className="mbtn mbtn-p" onClick={saveUserKeys} style={{ marginTop: 12 }}>
-          Lock in Vault
+          Save Optional Keys
         </button>
       </div>
 
@@ -86,8 +104,10 @@ export default function SettingsPage({
       </div>
 
       <div className="scard">
-        <h3>Your Background (for AI Cover Letters)</h3>
-        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Drop your PDF resume here, and we will extract the text for the AI context.</p>
+        <h3>Your Background</h3>
+        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>
+          Drop your PDF resume here so the optional AI tools can use it as context. You can still use the tracker without this.
+        </p>
 
         <div
           onDragOver={(e) => {
@@ -128,7 +148,9 @@ export default function SettingsPage({
 
       <div className="scard">
         <h3>Auto-Hunter Management</h3>
-        <p style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "16px" }}>The hunter will automatically search for these keywords and add new jobs to your To Do list.</p>
+        <p style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "16px" }}>
+          Auto-hunter is optional and requires your RapidAPI key. It will search these keywords and add new jobs to your To Do list.
+        </p>
 
         <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
           <div style={{ flex: 1, minWidth: "240px" }}>
@@ -152,7 +174,7 @@ export default function SettingsPage({
               </button>
             </div>
           ))}
-          {subs.length === 0 && <div className="note">No active hunts. Add some keywords above!</div>}
+          {subs.length === 0 && <div className="note">No active hunts. You can skip this entirely if you want to stay in free tracker mode.</div>}
         </div>
 
         <div style={{ marginTop: "24px", paddingTop: "24px", borderTop: "1px solid var(--b0)" }}>

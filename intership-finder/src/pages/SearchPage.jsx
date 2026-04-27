@@ -41,7 +41,7 @@ export default function SearchPage({
       <div className="panel">
         <div className="panel-head">
           <h2>Job search</h2>
-          <span className="panel-sub">Live results | Secure backend pipeline</span>
+          <span className="panel-sub">Optional live search | Bring your own RapidAPI key</span>
         </div>
 
         <div className="sf-grid">
@@ -92,14 +92,16 @@ export default function SearchPage({
                 <Icon name="error" size={36} strokeWidth={1.7} />
               </div>
               <p style={{ color: "var(--red)", fontWeight: 600 }}>{jsErr}</p>
-              <p style={{ fontSize: "11px", marginTop: "8px", color: "var(--txt3)" }}>Check your FastAPI terminal and .env file to ensure keys are loaded.</p>
+              <p style={{ fontSize: "11px", marginTop: "8px", color: "var(--txt3)" }}>
+                Live search is optional. Add your own RapidAPI key in Settings if you want backend-powered search.
+              </p>
             </div>
           )}
 
-          {!jsLoad && !jsErr && jsRes.length === 0 && (
+        {!jsLoad && !jsErr && jsRes.length === 0 && (
             <div className="empty">
               <div className="empty-ico"><Icon name="empty" size={36} strokeWidth={1.7} /></div>
-              <p>Search above to pull live jobs from LinkedIn, Indeed, Glassdoor and more</p>
+              <p>Search above to pull live jobs when you connect your own RapidAPI key, or keep using the tracker manually for free.</p>
             </div>
           )}
 

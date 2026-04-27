@@ -235,11 +235,11 @@ export default function Modal({
             <div className="mbody">
               {!resumeTxt ? (
                 <div className="note" style={{ borderColor: "var(--red)", color: "var(--red)", background: "rgba(248, 113, 113, 0.05)" }}>
-                  <strong>Missing Resume Context:</strong> Add your resume text in Settings before using this feature.
+                  <strong>Optional AI Setup:</strong> Add your resume text in Settings before using this feature.
                 </div>
               ) : (
                 <div className="note">
-                  Generating a custom letter for <strong>{coverApp?.role}</strong> at <strong>{coverApp?.company}</strong>.
+                  Generating a custom letter for <strong>{coverApp?.role}</strong> at <strong>{coverApp?.company}</strong>. This optional feature uses your own Gemini key if you added one in Settings.
                 </div>
               )}
 
@@ -366,7 +366,7 @@ export default function Modal({
 
             <div className="mbody">
               <div className="note">
-                Match your stored resume against <strong>{form.role}</strong> at <strong>{form.company}</strong>. For best results, keep the job description in the application notes.
+                Match your stored resume against <strong>{form.role}</strong> at <strong>{form.company}</strong>. This optional feature uses your Gemini key. For best results, keep the job description in the application notes.
               </div>
 
               {matchLoad && (
@@ -437,7 +437,7 @@ export default function Modal({
 
             <div className="mbody">
               <div className="note">
-                Draft a follow-up for <strong>{form.company}</strong> based on the current status, notes, and contact history.
+                Draft a follow-up for <strong>{form.company}</strong> based on the current status, notes, and contact history. This optional feature uses your Gemini key.
               </div>
 
               {followUpLoad && (
