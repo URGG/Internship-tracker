@@ -21,19 +21,11 @@ export default function SettingsPage({
   hL,
   setHL,
   hLoading,
+  onExportCsv,
+  onExportJson,
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
-
-  const handleDragOver = (e) => {
-    e.preventDefault();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-  };
 
   const handleDrop = async (e) => {
     e.preventDefault();
@@ -46,7 +38,6 @@ export default function SettingsPage({
     }
 
     setIsReading(true);
-
     try {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
@@ -55,8 +46,7 @@ export default function SettingsPage({
       for (let i = 1; i <= pdf.numPages; i++) {
         const page = await pdf.getPage(i);
         const textContent = await page.getTextContent();
-        const pageText = textContent.items.map((item) => item.str).join(" ");
-        extractedText += `${pageText}\n\n`;
+        extractedText += `${textContent.items.map((item) => item.str).join(" ")}\n\n`;
       }
 
       setResumeTxt(extractedText.trim());
@@ -69,7 +59,7 @@ export default function SettingsPage({
   };
 
   return (
-    <div style={{ maxWidth: 800, margin: "0 auto", paddingBottom: "40px" }}>
+    <div style={{ maxWidth: 900, margin: "0 auto", paddingBottom: "40px" }}>
       <div className="scard">
         <h3>User API Keys (Encrypted Vault)</h3>
         <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Your keys are encrypted in the database. They are never stored in plain text.</p>
@@ -87,16 +77,31 @@ export default function SettingsPage({
       </div>
 
       <div className="scard">
+        <h3>Backup and Export</h3>
+        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Export a spreadsheet for analysis or a JSON backup you can restore later.</p>
+        <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
+          <button className="mbtn" onClick={onExportCsv}>Export CSV</button>
+          <button className="mbtn mbtn-p" onClick={onExportJson}>Backup JSON</button>
+        </div>
+      </div>
+
+      <div className="scard">
         <h3>Your Background (for AI Cover Letters)</h3>
         <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Drop your PDF resume here, and we will extract the text for the AI context.</p>
 
         <div
-          onDragOver={handleDragOver}
-          onDragLeave={handleDragLeave}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setIsDragging(true);
+          }}
+          onDragLeave={(e) => {
+            e.preventDefault();
+            setIsDragging(false);
+          }}
           onDrop={handleDrop}
           style={{
             border: `2px dashed ${isDragging ? "var(--acc)" : "var(--b0)"}`,
-            backgroundColor: isDragging ? "rgba(255, 255, 255, 0.02)" : "var(--s2)",
+            backgroundColor: isDragging ? "rgba(255,255,255,0.02)" : "var(--s2)",
             borderRadius: "var(--r)",
             padding: "40px 20px",
             textAlign: "center",
@@ -125,16 +130,14 @@ export default function SettingsPage({
         <h3>Auto-Hunter Management</h3>
         <p style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "16px" }}>The hunter will automatically search for these keywords and add new jobs to your To Do list.</p>
 
-        <div style={{ display: "flex", gap: "10px", marginBottom: "20px" }}>
-          <div style={{ flex: 1 }}>
+        <div style={{ display: "flex", gap: "10px", marginBottom: "20px", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: "240px" }}>
             <Autocomplete type="job" value={hQ} onChange={(e) => setHQ(e.target.value)} placeholder="Keyword (e.g. React Developer)" />
           </div>
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, minWidth: "240px" }}>
             <Autocomplete type="city" value={hL} onChange={(e) => setHL(e.target.value)} placeholder="Location (e.g. New York)" />
           </div>
-          <button className="mbtn mbtn-p" onClick={addHunt}>
-            Add Hunt
-          </button>
+          <button className="mbtn mbtn-p" onClick={addHunt}>Add Hunt</button>
         </div>
 
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>

@@ -1,5 +1,6 @@
 import React from "react";
-import { STATUSES } from "../../utils/constants";
+import { INTERVIEW_STAGES, STATUSES } from "../../utils/constants";
+import { parseActivityLog } from "../../utils/helpers";
 
 export default function Modal({
   modal,
@@ -25,6 +26,8 @@ export default function Modal({
 }) {
   if (!modal) return null;
 
+  const history = parseActivityLog(form.activity_log);
+
   const handleCopy = () => {
     navigator.clipboard.writeText(coverOut);
     toast("Copied to clipboard!", "#5b7fff");
@@ -32,7 +35,7 @@ export default function Modal({
 
   return (
     <div className="overlay" onClick={() => setModal(null)}>
-      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: modal === "intel" ? 500 : 600 }}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: modal === "intel" ? 560 : 760 }}>
         {modal === "edit" && (
           <>
             <div className="mhead">
@@ -78,8 +81,36 @@ export default function Modal({
                   </select>
                 </div>
                 <div className="frow">
+                  <span className="flbl">Interview Stage</span>
+                  <select className="finp" value={form.interview_stage || ""} onChange={setF("interview_stage")}>
+                    {INTERVIEW_STAGES.map((s) => (
+                      <option key={s || "none"} value={s}>
+                        {s || "None"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="fg2">
+                <div className="frow">
                   <span className="flbl">Date Applied</span>
                   <input className="finp" type="date" value={form.applied_date || ""} onChange={setF("applied_date")} />
+                </div>
+                <div className="frow">
+                  <span className="flbl">Deadline</span>
+                  <input className="finp" type="date" value={form.deadline || ""} onChange={setF("deadline")} />
+                </div>
+              </div>
+
+              <div className="fg2">
+                <div className="frow">
+                  <span className="flbl">Next Action Date</span>
+                  <input className="finp" type="date" value={form.next_action_date || ""} onChange={setF("next_action_date")} />
+                </div>
+                <div className="frow">
+                  <span className="flbl">Last Contact</span>
+                  <input className="finp" type="date" value={form.last_contact_date || ""} onChange={setF("last_contact_date")} />
                 </div>
               </div>
 
@@ -97,6 +128,20 @@ export default function Modal({
                 </div>
               </div>
 
+              <div className="fg2">
+                <div className="frow">
+                  <span className="flbl">Source</span>
+                  <input className="finp" value={form.source || ""} onChange={setF("source")} placeholder="e.g. LinkedIn" />
+                </div>
+                <div className="frow">
+                  <span className="flbl">Follow-up Sent?</span>
+                  <select className="finp" value={form.follow_up_sent ? "true" : "false"} onChange={(e) => setForm({ ...form, follow_up_sent: e.target.value === "true" })}>
+                    <option value="false">Pending</option>
+                    <option value="true">Sent</option>
+                  </select>
+                </div>
+              </div>
+
               <div className="frow">
                 <span className="flbl">Application Link</span>
                 <input className="finp" value={form.link || ""} onChange={setF("link")} placeholder="https://..." />
@@ -104,19 +149,49 @@ export default function Modal({
 
               <div className="fg2">
                 <div className="frow">
-                  <span className="flbl">Source</span>
-                  <input className="finp" value={form.source || ""} onChange={setF("source")} placeholder="e.g. LinkedIn" />
+                  <span className="flbl">Recruiter Name</span>
+                  <input className="finp" value={form.recruiter_name || ""} onChange={setF("recruiter_name")} placeholder="e.g. Jane Recruiter" />
                 </div>
                 <div className="frow">
-                  <span className="flbl">Deadline</span>
-                  <input className="finp" type="date" value={form.deadline || ""} onChange={setF("deadline")} />
+                  <span className="flbl">Recruiter Email</span>
+                  <input className="finp" value={form.recruiter_email || ""} onChange={setF("recruiter_email")} placeholder="e.g. jane@company.com" />
                 </div>
+              </div>
+
+              <div className="fg2">
+                <div className="frow">
+                  <span className="flbl">Referral</span>
+                  <input className="finp" value={form.referral_name || ""} onChange={setF("referral_name")} placeholder="Who referred you?" />
+                </div>
+                <div className="frow">
+                  <span className="flbl">Resume Version</span>
+                  <input className="finp" value={form.resume_version || ""} onChange={setF("resume_version")} placeholder="e.g. SWE-v3" />
+                </div>
+              </div>
+
+              <div className="frow">
+                <span className="flbl">Cover Letter Version</span>
+                <input className="finp" value={form.cover_letter_version || ""} onChange={setF("cover_letter_version")} placeholder="e.g. CL-v2" />
               </div>
 
               <div className="frow">
                 <span className="flbl">Notes</span>
                 <textarea className="finp fta" value={form.notes || ""} onChange={setF("notes")} style={{ minHeight: "100px" }} />
               </div>
+
+              {history.length > 0 && (
+                <div className="frow">
+                  <span className="flbl">Activity Log</span>
+                  <div className="note" style={{ marginTop: 0 }}>
+                    {history.slice().reverse().map((item, index) => (
+                      <div key={`${item.timestamp}-${index}`} style={{ paddingBottom: index === history.length - 1 ? 0 : "10px", marginBottom: index === history.length - 1 ? 0 : "10px", borderBottom: index === history.length - 1 ? "none" : "1px solid var(--b0)" }}>
+                        <div style={{ fontSize: "12px", color: "var(--txt2)" }}>{item.message}</div>
+                        <div style={{ fontSize: "10px", color: "var(--txt3)", marginTop: "4px" }}>{item.timestamp}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="mfoot" style={{ justifyContent: eid ? "space-between" : "flex-end" }}>
@@ -137,7 +212,7 @@ export default function Modal({
           <>
             <div className="mhead">
               <h2>Generate Cover Letter</h2>
-              <button className="closex" onClick={() => { setModal("edit"); setCoverOut(""); }}>
+              <button className="closex" onClick={() => setModal("edit")}>
                 x
               </button>
             </div>
@@ -145,24 +220,18 @@ export default function Modal({
             <div className="mbody">
               {!resumeTxt ? (
                 <div className="note" style={{ borderColor: "var(--red)", color: "var(--red)", background: "rgba(248, 113, 113, 0.05)" }}>
-                  <strong>Missing Resume Context:</strong> You haven't added your resume yet. Go to the <strong>Settings</strong> tab, paste your resume text, and save your Gemini API key before using this feature.
+                  <strong>Missing Resume Context:</strong> Add your resume text in Settings before using this feature.
                 </div>
               ) : (
                 <div className="note">
-                  Generating custom letter for <strong>{coverApp?.role}</strong> at <strong>{coverApp?.company}</strong>.
+                  Generating a custom letter for <strong>{coverApp?.role}</strong> at <strong>{coverApp?.company}</strong>.
                 </div>
               )}
 
               {!coverOut && !coverLoad && (
                 <div className="frow">
                   <span className="flbl">Paste Job Description (Optional but recommended)</span>
-                  <textarea
-                    className="finp fta"
-                    placeholder="Paste the requirements or description from the job posting here so the AI can tailor the letter..."
-                    value={coverJob}
-                    onChange={(e) => setCoverJob(e.target.value)}
-                    style={{ minHeight: "150px" }}
-                  />
+                  <textarea className="finp fta" placeholder="Paste the job description here so the AI can tailor the letter..." value={coverJob} onChange={(e) => setCoverJob(e.target.value)} style={{ minHeight: "150px" }} />
                 </div>
               )}
 
@@ -187,10 +256,9 @@ export default function Modal({
             </div>
 
             <div className="mfoot">
-              <button className="mbtn mbtn-g" onClick={() => { setModal("edit"); setCoverOut(""); }}>
+              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>
                 Back
               </button>
-
               {!coverOut ? (
                 <button className="mbtn mbtn-p" onClick={genCover} disabled={!resumeTxt || coverLoad}>
                   {coverLoad ? "Generating..." : "Generate"}

@@ -1,10 +1,21 @@
-import { SOURCES, KCOLS, SD, SP } from '../utils/constants';
-import { fmt, daysUntil, srcTag } from '../utils/helpers';
-import Card from '../components/shared/Card';
+import { SOURCES, KCOLS, SD, SP } from "../utils/constants";
+import { fmt, daysUntil, isFollowUpDue, srcTag } from "../utils/helpers";
+import Card from "../components/shared/Card";
 
 export default function TrackerPage({
-  stats, srcF, setSrcF, view, setView, filtered, dragOver, setDragOver,
-  onDrop, openEdit, openCover, setDragId
+  stats,
+  srcF,
+  setSrcF,
+  view,
+  setView,
+  filtered,
+  dragOver,
+  setDragOver,
+  onDrop,
+  openEdit,
+  openCover,
+  setDragId,
+  reminders,
 }) {
   return (
     <>
@@ -13,7 +24,8 @@ export default function TrackerPage({
           { lbl: "Total tracked", val: stats.total, sub: "applications", cls: "ca" },
           { lbl: "Applied", val: stats.applied, sub: "submitted", cls: "cp" },
           { lbl: "In Interview", val: stats.ivw, sub: "active rounds", cls: "cb" },
-          { lbl: "Offers", val: stats.offers, sub: stats.offers > 0 ? "🎉 congrats!" : "keep pushing", cls: "cg" },
+          { lbl: "Follow-ups", val: stats.reminders, sub: stats.reminders > 0 ? "action needed" : "all clear", cls: "cb" },
+          { lbl: "Offers", val: stats.offers, sub: stats.offers > 0 ? "momentum" : "keep pushing", cls: "cg" },
         ].map((s) => (
           <div key={s.lbl} className="stat" style={{ color: `var(--${s.cls === "ca" ? "acc" : s.cls === "cp" ? "acc2" : s.cls === "cb" ? "amb" : "grn"})` }}>
             <div className="stat-lbl">{s.lbl}</div>
@@ -23,14 +35,63 @@ export default function TrackerPage({
         ))}
       </div>
 
+      {reminders.length > 0 && (
+        <div className="scard" style={{ marginBottom: "20px" }}>
+          <h3 style={{ marginBottom: "14px" }}>Action Queue</h3>
+          <div style={{ display: "grid", gap: "10px" }}>
+            {reminders.slice(0, 6).map((app) => {
+              const followUp = isFollowUpDue(app);
+              const deadlineDays = daysUntil(app.deadline);
+              return (
+                <button
+                  key={app.id}
+                  onClick={() => openEdit(app)}
+                  style={{
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    gap: "12px",
+                    background: "var(--s2)",
+                    border: "1px solid var(--b0)",
+                    borderRadius: "var(--r)",
+                    padding: "12px 14px",
+                    color: "var(--txt)",
+                    cursor: "pointer",
+                    textAlign: "left",
+                  }}
+                >
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: "13px" }}>{app.company}</div>
+                    <div style={{ color: "var(--txt2)", fontSize: "12px", marginTop: "3px" }}>{app.role}</div>
+                    <div style={{ color: "var(--txt3)", fontSize: "11px", marginTop: "5px" }}>
+                      {followUp ? `Follow up by ${fmt(app.next_action_date)}` : `Deadline on ${fmt(app.deadline)}`}
+                      {app.recruiter_name ? ` | ${app.recruiter_name}` : ""}
+                    </div>
+                  </div>
+                  <span className={`tag ${followUp || (deadlineDays !== null && deadlineDays <= 1) ? "t-warn" : "t-soon"}`}>
+                    {followUp ? "follow up" : "deadline"}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
       <div className="fbar">
         <span className="fbar-lbl">source:</span>
         {["all", ...SOURCES].map((s) => (
-          <button key={s} className={`chip${srcF === s ? " on" : ""}`} onClick={() => setSrcF(s)}>{s}</button>
+          <button key={s} className={`chip${srcF === s ? " on" : ""}`} onClick={() => setSrcF(s)}>
+            {s}
+          </button>
         ))}
         <div className="vsw">
-          <button className={`vsw-btn${view === "board" ? " on" : ""}`} onClick={() => setView("board")}>Board</button>
-          <button className={`vsw-btn${view === "list" ? " on" : ""}`} onClick={() => setView("list")}>List</button>
+          <button className={`vsw-btn${view === "board" ? " on" : ""}`} onClick={() => setView("board")}>
+            Board
+          </button>
+          <button className={`vsw-btn${view === "list" ? " on" : ""}`} onClick={() => setView("list")}>
+            List
+          </button>
         </div>
       </div>
 
@@ -39,10 +100,16 @@ export default function TrackerPage({
           {KCOLS.map((col) => {
             const ca = filtered.filter((a) => a.status === col);
             return (
-              <div key={col} className={`kcol${dragOver === col ? " drag-over" : ""}`}
-                onDragOver={(e) => { e.preventDefault(); setDragOver(col); }}
+              <div
+                key={col}
+                className={`kcol${dragOver === col ? " drag-over" : ""}`}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  setDragOver(col);
+                }}
                 onDragLeave={() => setDragOver(null)}
-                onDrop={() => onDrop(col)}>
+                onDrop={() => onDrop(col)}
+              >
                 <div className="khead">
                   <div className={`kdot ${SD[col]}`} />
                   <span className="kttl">{col}</span>
@@ -50,7 +117,9 @@ export default function TrackerPage({
                 </div>
                 <div className="kcards">
                   {ca.length === 0 && <div className="kdrop">drop here</div>}
-                  {ca.map((a) => <Card key={a.id} app={a} setDragId={setDragId} openEdit={openEdit} />)}
+                  {ca.map((a) => (
+                    <Card key={a.id} app={a} setDragId={setDragId} openEdit={openEdit} />
+                  ))}
                 </div>
               </div>
             );
@@ -59,20 +128,60 @@ export default function TrackerPage({
       ) : (
         <div className="ltbl-wrap">
           <table className="ltbl">
-            <thead><tr><th>Company</th><th>Role</th><th>Status</th><th>Source</th><th>Applied</th><th>Deadline</th><th></th></tr></thead>
+            <thead>
+              <tr>
+                <th>Company</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Source</th>
+                <th>Next Action</th>
+                <th>Contact</th>
+                <th>Versions</th>
+                <th></th>
+              </tr>
+            </thead>
             <tbody>
-              {filtered.length === 0 && <tr><td colSpan={7}><div className="empty"><div className="empty-ico">○</div><p>no applications found</p></div></td></tr>}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8}>
+                    <div className="empty">
+                      <div className="empty-ico">o</div>
+                      <p>no applications found</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
               {filtered.map((a) => {
-                const du = daysUntil(a.deadline);
+                const nextActionLabel = a.next_action_date ? fmt(a.next_action_date) : a.deadline ? `deadline ${fmt(a.deadline)}` : "-";
                 return (
                   <tr key={a.id} onClick={() => openEdit(a)}>
                     <td style={{ fontWeight: 700 }}>{a.company}</td>
-                    <td style={{ color: "var(--txt2)", fontSize: 12 }}>{a.role}</td>
-                    <td><span className={`spill ${SP[a.status] || "sw"}`}><span className={`kdot ${SD[a.status]}`} style={{ width: 6, height: 6 }} />{a.status}</span></td>
-                    <td><span className={`tag ${srcTag(a.source)}`}>{a.source}</span></td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--txt3)" }}>{fmt(a.applied_date)}</td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: du !== null && du <= 3 ? "var(--red)" : du !== null && du <= 7 ? "var(--amb)" : "var(--txt3)" }}>{fmt(a.deadline)}</td>
-                    <td onClick={(e) => { e.stopPropagation(); openCover(a); }}><button className="rbtn">AI cover ↗</button></td>
+                    <td style={{ color: "var(--txt2)", fontSize: 12 }}>
+                      {a.role}
+                      {a.interview_stage ? ` | ${a.interview_stage}` : ""}
+                    </td>
+                    <td>
+                      <span className={`spill ${SP[a.status] || "sw"}`}>
+                        <span className={`kdot ${SD[a.status]}`} style={{ width: 6, height: 6 }} />
+                        {a.status}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`tag ${srcTag(a.source)}`}>{a.source}</span>
+                    </td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: isFollowUpDue(a) ? "var(--red)" : "var(--txt3)" }}>{nextActionLabel}</td>
+                    <td style={{ fontSize: 12, color: "var(--txt2)" }}>{a.recruiter_name || a.recruiter_email || "-"}</td>
+                    <td style={{ fontSize: 12, color: "var(--txt2)" }}>
+                      {[a.resume_version && `R:${a.resume_version}`, a.cover_letter_version && `C:${a.cover_letter_version}`].filter(Boolean).join(" | ") || "-"}
+                    </td>
+                    <td
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openCover(a);
+                      }}
+                    >
+                      <button className="rbtn">AI Cover</button>
+                    </td>
                   </tr>
                 );
               })}

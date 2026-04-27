@@ -1,28 +1,47 @@
 export const STATUSES = ["To Do", "Applied", "Phone Screen", "Interview", "Offer", "Rejected"];
 export const KCOLS = [...STATUSES];
 export const SOURCES = ["LinkedIn", "Indeed", "Handshake", "Search", "Auto-Hunter", "Other"];
+export const INTERVIEW_STAGES = ["", "Online Assessment", "Recruiter Screen", "Phone Screen", "Technical", "Behavioral", "Final Round", "Take Home"];
+
 export const JOB_TYPES = [
-    { v: "", l: "Any type" },
-    { v: "INTERN", l: "Internship" },
-    { v: "FULLTIME", l: "Full-time" },
-    { v: "PARTTIME", l: "Part-time" },
-    { v: "CONTRACTOR", l: "Contract" }
-];
-export const DATE_OPTS = [{ v: "", l: "Any time" }, { v: "today", l: "Past 24h" }, { v: "3days", l: "Past 3 days" }, { v: "week", l: "Past week" }, { v: "month", l: "Past month" }];
-
-export const SP = { "To Do": "sw", "Applied": "sa", "Phone Screen": "sp", "Interview": "si", "Offer": "so", "Rejected": "sr" };
-export const SD = { "To Do": "d-W", "Applied": "d-A", "Phone Screen": "d-P", "Interview": "d-I", "Offer": "d-O", "Rejected": "d-R" };
-export const ST = { "LinkedIn": "t-li", "Indeed": "t-in", "Handshake": "t-hs", "Search": "t-ot", "Auto-Hunter": "t-ot", "Other": "t-ot" };
-
-export const SEED = [
-    { id: 1, company: "Stripe", role: "Software Engineer Intern", status: "Interview", source: "LinkedIn", applied_date: "2026-03-10", deadline: "2026-03-28", location: "San Francisco, CA", remote: false, link: "", notes: "Referred by alumni" },
-    { id: 2, company: "Figma", role: "SWE Intern – Platform", status: "Phone Screen", source: "Handshake", applied_date: "2026-03-08", deadline: "", location: "Remote", remote: true, link: "", notes: "" },
-    { id: 3, company: "Notion", role: "Software Engineer Intern", status: "Applied", source: "LinkedIn", applied_date: "2026-03-15", deadline: "2026-04-01", location: "New York, NY", remote: false, link: "", notes: "" },
-    { id: 4, company: "Airbnb", role: "SWE Intern", status: "Applied", source: "Indeed", applied_date: "2026-03-12", deadline: "", location: "San Francisco, CA", remote: false, link: "", notes: "" },
-    { id: 5, company: "Vercel", role: "Frontend Intern", status: "To Do", source: "Other", applied_date: "", deadline: "2026-03-30", location: "Remote", remote: true, link: "https://vercel.com/careers", notes: "Apply before end of March" },
-    { id: 6, company: "Linear", role: "SWE Intern", status: "Offer", source: "LinkedIn", applied_date: "2026-02-28", deadline: "", location: "Remote", remote: true, link: "", notes: "Accept by April 5" },
-    { id: 7, company: "Scale AI", role: "ML Engineer Intern", status: "Rejected", source: "Indeed", applied_date: "2026-03-01", deadline: "", location: "San Francisco, CA", remote: false, link: "", notes: "" },
-    { id: 8, company: "Retool", role: "Software Intern", status: "To Do", source: "Handshake", applied_date: "", deadline: "", location: "San Francisco, CA", remote: false, link: "", notes: "" },
+  { v: "", l: "Any type" },
+  { v: "INTERN", l: "Internship" },
+  { v: "FULLTIME", l: "Full-time" },
+  { v: "PARTTIME", l: "Part-time" },
+  { v: "CONTRACTOR", l: "Contract" },
 ];
 
-export const BLANK = { company: "", role: "", status: "To Do", source: "LinkedIn", applied_date: "", deadline: "", location: "", remote: false, link: "", notes: "" };
+export const DATE_OPTS = [
+  { v: "", l: "Any time" },
+  { v: "today", l: "Past 24h" },
+  { v: "3days", l: "Past 3 days" },
+  { v: "week", l: "Past week" },
+  { v: "month", l: "Past month" },
+];
+
+export const SP = { "To Do": "sw", Applied: "sa", "Phone Screen": "sp", Interview: "si", Offer: "so", Rejected: "sr" };
+export const SD = { "To Do": "d-W", Applied: "d-A", "Phone Screen": "d-P", Interview: "d-I", Offer: "d-O", Rejected: "d-R" };
+export const ST = { LinkedIn: "t-li", Indeed: "t-in", Handshake: "t-hs", Search: "t-ot", "Auto-Hunter": "t-ot", Other: "t-ot" };
+
+export const BLANK = {
+  company: "",
+  role: "",
+  status: "To Do",
+  source: "LinkedIn",
+  applied_date: "",
+  deadline: "",
+  location: "",
+  remote: false,
+  link: "",
+  notes: "",
+  recruiter_name: "",
+  recruiter_email: "",
+  referral_name: "",
+  interview_stage: "",
+  next_action_date: "",
+  follow_up_sent: false,
+  last_contact_date: "",
+  resume_version: "",
+  cover_letter_version: "",
+  activity_log: "[]",
+};

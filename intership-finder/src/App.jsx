@@ -1,14 +1,16 @@
 import { useState, useMemo, useEffect } from "react";
 import { BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
-import KanbanBoard from "./KanbanBoard";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import AnalyticsPage from "./pages/AnalyticsPage";
+import TrackerPage from "./pages/TrackerPage";
 import SearchPage from "./pages/SearchPage";
 import SettingsPage from "./pages/SettingsPage";
 import Modal from "./components/shared/Modal";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://internship-tracker-1-9w2v.onrender.com/api";
+
+const normalizeApp = (app) => ({ ...BLANK, ...app, activity_log: app.activity_log || "[]" });
 
 const LoginModal = ({ show, setShow, setToken, toast }) => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -93,7 +95,6 @@ const LoginModal = ({ show, setShow, setToken, toast }) => {
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [showLogin, setShowLogin] = useState(false);
-
   const [apps, setApps] = useState([]);
   const [view, setView] = useState("board");
   const [page, setPage] = useState("tracker");
@@ -101,6 +102,7 @@ export default function App() {
   const [stF, setStF] = useState("all");
   const [q, setQ] = useState("");
   const [dragId, setDragId] = useState(null);
+  const [dragOver, setDragOver] = useState(null);
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState(BLANK);
   const [eid, setEid] = useState(null);
@@ -127,7 +129,6 @@ export default function App() {
   const [jsAdded, setJsAdded] = useState(new Set());
 
   const [toasts, setToasts] = useState([]);
-
   const [subs, setSubs] = useState([]);
   const [hQ, setHQ] = useState("");
   const [hL, setHL] = useState("");
@@ -143,36 +144,31 @@ export default function App() {
     localStorage.setItem("resumeTxt", resumeTxt);
   }, [resumeTxt]);
 
-  useEffect(() => {
-    if (!token) {
-      setApps([]);
-      setSubs([]);
-      return;
-    }
+  const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
-    const headers = { Authorization: `Bearer ${token}` };
+  const downloadFile = (filename, content, type) => {
+    const blob = new Blob([content], { type });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
-    fetch(`${API_BASE}/jobs`, { headers })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setApps(data);
-      });
+  const exportJobsJson = () => {
+    downloadFile(`intern-track-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(apps, null, 2), "application/json");
+  };
 
-    fetch(`${API_BASE}/subscriptions`, { headers })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setSubs(data);
-      });
-  }, [token]);
-
-  const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
-    setToken(null);
-    setApps([]);
-    setSubs([]);
-    setPage("tracker");
-    toast("Logged out securely", "#8b91b8");
+  const exportJobsCsv = () => {
+    const headers = [
+      "company", "role", "status", "source", "applied_date", "deadline", "location", "remote",
+      "link", "notes", "recruiter_name", "recruiter_email", "referral_name", "interview_stage",
+      "next_action_date", "follow_up_sent", "last_contact_date", "resume_version", "cover_letter_version"
+    ];
+    const escape = (value) => `"${String(value ?? "").replace(/"/g, '""')}"`;
+    const rows = apps.map((app) => headers.map((header) => escape(app[header])).join(","));
+    downloadFile(`intern-track-backup-${new Date().toISOString().slice(0, 10)}.csv`, [headers.join(","), ...rows].join("\n"), "text/csv");
   };
 
   const requireAuth = () => {
@@ -184,7 +180,43 @@ export default function App() {
     return true;
   };
 
-  const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  useEffect(() => {
+    if (!token) {
+      setApps([]);
+      setSubs([]);
+      return;
+    }
+
+    const headers = { Authorization: `Bearer ${token}` };
+    fetch(`${API_BASE}/jobs`, { headers })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setApps(data.map(normalizeApp));
+      });
+
+    fetch(`${API_BASE}/subscriptions`, { headers })
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data)) setSubs(data);
+      });
+  }, [token]);
+
+  const isDuplicate = (job, ignoreId = null) =>
+    apps.some((app) => {
+      if (ignoreId && app.id === ignoreId) return false;
+      if (job.link && app.link && job.link === app.link) return true;
+      return app.company.trim().toLowerCase() === job.company.trim().toLowerCase() && app.role.trim().toLowerCase() === job.role.trim().toLowerCase();
+    });
+
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    setToken(null);
+    setApps([]);
+    setSubs([]);
+    setPage("tracker");
+    toast("Logged out securely", "#8b91b8");
+  };
 
   const addHunt = async () => {
     if (!requireAuth() || !hQ.trim()) return;
@@ -228,7 +260,7 @@ export default function App() {
       if (data.added > 0) {
         const jobsRes = await fetch(`${API_BASE}/jobs`, { headers: authHeaders });
         const jobsData = await jobsRes.json();
-        setApps(jobsData);
+        setApps(jobsData.map(normalizeApp));
         toast(`Found ${data.added} new jobs!`, "#34d399");
       } else {
         toast("No new jobs found today.", "#9b9a97");
@@ -258,7 +290,11 @@ export default function App() {
   };
 
   const save = async () => {
-    if (!requireAuth() || !form.company.trim()) return;
+    if (!requireAuth() || !form.company.trim() || !form.role.trim()) return;
+    if (isDuplicate(form, eid)) {
+      toast("This application is already being tracked", "#fbbf24");
+      return;
+    }
     try {
       const method = eid ? "PUT" : "POST";
       const endpoint = eid ? `/jobs/${eid}` : "/jobs";
@@ -267,8 +303,9 @@ export default function App() {
         headers: authHeaders,
         body: JSON.stringify(form),
       });
-      if (!res.ok) throw new Error("Database error");
-      const savedJob = await res.json();
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Database error");
+      const savedJob = normalizeApp(data);
 
       if (eid) {
         setApps((a) => a.map((x) => (x.id === eid ? savedJob : x)));
@@ -319,25 +356,33 @@ export default function App() {
   const saveSearchJob = async (r) => {
     if (!requireAuth()) return;
     const newJob = {
+      ...BLANK,
       company: r.company,
       role: r.role,
       status: "To Do",
-      source: r.source,
-      applied_date: new Date().toISOString().slice(0, 10),
+      source: r.source || "Search",
+      applied_date: "",
       location: r.location,
       remote: r.remote,
       link: r.link,
-      notes: `${r.desc.slice(0, 100)}...`,
+      notes: `${(r.desc || "").slice(0, 100)}...`,
+      next_action_date: new Date().toISOString().slice(0, 10),
     };
+    if (isDuplicate(newJob)) {
+      toast("This application is already being tracked", "#fbbf24");
+      setJsAdded((prev) => new Set([...prev, r._id]));
+      return;
+    }
+
     try {
       const res = await fetch(`${API_BASE}/jobs`, { method: "POST", headers: authHeaders, body: JSON.stringify(newJob) });
-      if (!res.ok) throw new Error("Failed");
-      const savedJob = await res.json();
-      setApps((a) => [...a, savedJob]);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed");
+      setApps((a) => [...a, normalizeApp(data)]);
       setJsAdded((prev) => new Set([...prev, r._id]));
-      toast(`Added ${r.company}`);
+      toast(`Saved ${r.company} as a lead`);
     } catch (e) {
-      toast("Failed to add job", "#f87171");
+      toast(e.message || "Failed to add job", "#f87171");
     }
   };
 
@@ -389,11 +434,24 @@ export default function App() {
         if (stF !== "all" && a.status !== stF) return false;
         if (q) {
           const lq = q.toLowerCase();
-          if (!a.company.toLowerCase().includes(lq) && !a.role.toLowerCase().includes(lq)) return false;
+          const haystack = [a.company, a.role, a.recruiter_name, a.recruiter_email, a.interview_stage].join(" ").toLowerCase();
+          if (!haystack.includes(lq)) return false;
         }
         return true;
       }),
     [apps, srcF, stF, q]
+  );
+
+  const reminders = useMemo(
+    () =>
+      apps
+        .filter((a) => {
+          const followUpDue = a.next_action_date && !a.follow_up_sent && new Date(a.next_action_date) <= new Date();
+          const deadlineSoon = a.deadline && new Date(a.deadline) <= new Date(Date.now() + 3 * 86400000);
+          return followUpDue || deadlineSoon;
+        })
+        .sort((a, b) => (a.next_action_date || a.deadline || "").localeCompare(b.next_action_date || b.deadline || "")),
+    [apps]
   );
 
   const stats = useMemo(
@@ -402,13 +460,14 @@ export default function App() {
       applied: apps.filter((a) => a.status !== "To Do").length,
       ivw: apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length,
       offers: apps.filter((a) => a.status === "Offer").length,
+      reminders: reminders.length,
     }),
-    [apps]
+    [apps, reminders]
   );
 
   const openAdd = () => {
     if (requireAuth()) {
-      setForm({ ...BLANK, applied_date: new Date().toISOString().slice(0, 10) });
+      setForm({ ...BLANK, next_action_date: new Date().toISOString().slice(0, 10) });
       setEid(null);
       setModal("edit");
     }
@@ -416,7 +475,7 @@ export default function App() {
 
   const openEdit = (a) => {
     if (requireAuth()) {
-      setForm({ ...a });
+      setForm({ ...BLANK, ...normalizeApp(a) });
       setEid(a.id);
       setModal("edit");
     }
@@ -438,18 +497,26 @@ export default function App() {
     const targetJob = apps.find((x) => x.id === dragId);
     if (!targetJob) return;
 
-    const newDate = status === "Applied" ? new Date().toISOString().slice(0, 10) : targetJob.applied_date;
+    const nextPayload = {
+      ...targetJob,
+      status,
+      applied_date: status === "Applied" && !targetJob.applied_date ? new Date().toISOString().slice(0, 10) : targetJob.applied_date,
+    };
 
-    setApps((a) => a.map((x) => (x.id === dragId ? { ...x, status, applied_date: newDate } : x)));
+    setApps((a) => a.map((x) => (x.id === dragId ? normalizeApp(nextPayload) : x)));
     setDragId(null);
+    setDragOver(null);
     toast(`Moved to ${status}`, "#5b7fff");
 
     try {
-      await fetch(`${API_BASE}/jobs/${targetJob.id}`, {
+      const res = await fetch(`${API_BASE}/jobs/${targetJob.id}`, {
         method: "PUT",
         headers: authHeaders,
-        body: JSON.stringify({ ...targetJob, status, applied_date: newDate }),
+        body: JSON.stringify(nextPayload),
       });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      setApps((a) => a.map((x) => (x.id === dragId ? normalizeApp(data) : x)));
     } catch {
       toast("Failed to sync drag with database", "#f87171");
     }
@@ -457,7 +524,6 @@ export default function App() {
 
   const handleNav = (id) => {
     setPage(["settings", "search", "analytics"].includes(id) ? id : "tracker");
-
     if (["wishlist", "ivw", "offers"].includes(id)) {
       setStF(id === "wishlist" ? "To Do" : id === "ivw" ? "Interview" : "Offer");
     } else {
@@ -560,7 +626,23 @@ export default function App() {
           </div>
 
           <div className="content">
-            {page === "tracker" && <KanbanBoard filtered={filtered} setDragId={setDragId} onDrop={onDrop} openEdit={openEdit} />}
+            {page === "tracker" && (
+              <TrackerPage
+                stats={stats}
+                srcF={srcF}
+                setSrcF={setSrcF}
+                view={view}
+                setView={setView}
+                filtered={filtered}
+                dragOver={dragOver}
+                setDragOver={setDragOver}
+                onDrop={onDrop}
+                openEdit={openEdit}
+                openCover={openCover}
+                setDragId={setDragId}
+                reminders={reminders}
+              />
+            )}
             {page === "search" && (
               <SearchPage
                 jsQ={jsQ}
@@ -579,7 +661,7 @@ export default function App() {
                 addFromSearch={saveSearchJob}
               />
             )}
-            {page === "analytics" && <AnalyticsPage apps={apps} />}
+            {page === "analytics" && <AnalyticsPage apps={apps} onExportCsv={exportJobsCsv} onExportJson={exportJobsJson} />}
             {page === "settings" && (
               <SettingsPage
                 rKey={rKey}
@@ -598,6 +680,8 @@ export default function App() {
                 hL={hL}
                 setHL={setHL}
                 hLoading={hLoading}
+                onExportCsv={exportJobsCsv}
+                onExportJson={exportJobsJson}
               />
             )}
           </div>
@@ -622,7 +706,6 @@ export default function App() {
         setResumeTxt={setResumeTxt}
         coverLoad={coverLoad}
         coverOut={coverOut}
-        setCoverOut={setCoverOut}
         genCover={genCover}
         openCover={openCover}
         intelData={intelData}

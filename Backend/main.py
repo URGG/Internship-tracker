@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 import jwt
 import bcrypt
@@ -66,6 +66,16 @@ class JobApplication(Base):
     remote = Column(Boolean, default=False)
     link = Column(String, nullable=True)
     notes = Column(String, nullable=True)
+    recruiter_name = Column(String, nullable=True)
+    recruiter_email = Column(String, nullable=True)
+    referral_name = Column(String, nullable=True)
+    interview_stage = Column(String, nullable=True)
+    next_action_date = Column(String, nullable=True)
+    follow_up_sent = Column(Boolean, default=False)
+    last_contact_date = Column(String, nullable=True)
+    resume_version = Column(String, nullable=True)
+    cover_letter_version = Column(String, nullable=True)
+    activity_log = Column(Text, nullable=True)
 
 class SearchSubscription(Base):
     __tablename__ = "search_subscriptions"
@@ -75,8 +85,8 @@ class SearchSubscription(Base):
     location = Column(String)
     job_type = Column(String, default="INTERN")
 
-Base.metadata.create_all(bind=engine)
 VALID_STATUSES = {"To Do", "Applied", "Phone Screen", "Interview", "Offer", "Rejected"}
+VALID_INTERVIEW_STAGES = {"", "Online Assessment", "Recruiter Screen", "Phone Screen", "Technical", "Behavioral", "Final Round", "Take Home"}
 
 class UserAuth(BaseModel):
     username: str
@@ -102,6 +112,16 @@ class JobCreate(BaseModel):
     remote: bool = False
     link: Optional[str] = None
     notes: Optional[str] = None
+    recruiter_name: Optional[str] = None
+    recruiter_email: Optional[str] = None
+    referral_name: Optional[str] = None
+    interview_stage: Optional[str] = None
+    next_action_date: Optional[str] = None
+    follow_up_sent: bool = False
+    last_contact_date: Optional[str] = None
+    resume_version: Optional[str] = None
+    cover_letter_version: Optional[str] = None
+    activity_log: Optional[str] = None
 
 class CoverRequest(BaseModel):
     company: str
@@ -128,6 +148,34 @@ def get_db():
     try: yield db
     finally: db.close()
 
+def ensure_job_application_columns():
+    inspector = inspect(engine)
+    existing_columns = {column["name"] for column in inspector.get_columns("applications")} if inspector.has_table("applications") else set()
+    additions = {
+        "recruiter_name": "VARCHAR",
+        "recruiter_email": "VARCHAR",
+        "referral_name": "VARCHAR",
+        "interview_stage": "VARCHAR",
+        "next_action_date": "VARCHAR",
+        "follow_up_sent": "BOOLEAN DEFAULT FALSE",
+        "last_contact_date": "VARCHAR",
+        "resume_version": "VARCHAR",
+        "cover_letter_version": "VARCHAR",
+        "activity_log": "TEXT",
+    }
+
+    if not existing_columns:
+        return
+
+    with engine.begin() as connection:
+        for column_name, column_type in additions.items():
+            if column_name in existing_columns:
+                continue
+            connection.execute(text(f"ALTER TABLE applications ADD COLUMN {column_name} {column_type}"))
+
+Base.metadata.create_all(bind=engine)
+ensure_job_application_columns()
+
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
@@ -140,26 +188,65 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     if user is None: raise HTTPException(status_code=401, detail="User not found")
     return user
 
+def load_activity_log(value: Optional[str]):
+    if not value:
+        return []
+    try:
+        data = json.loads(value)
+        return data if isinstance(data, list) else []
+    except json.JSONDecodeError:
+        return []
+
+def append_activity(existing_log: Optional[str], message: str):
+    entries = load_activity_log(existing_log)
+    entries.append({
+        "message": message,
+        "timestamp": datetime.utcnow().isoformat(timespec="seconds") + "Z"
+    })
+    return json.dumps(entries[-50:])
+
 def normalize_job_payload(job: JobCreate):
     payload = job.dict()
+    payload["company"] = payload["company"].strip()
+    payload["role"] = payload["role"].strip()
     payload["status"] = payload["status"].strip()
     payload["source"] = (payload["source"] or "Other").strip() or "Other"
+    payload["interview_stage"] = (payload["interview_stage"] or "").strip()
 
     if payload["status"] not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid application status")
+    if payload["interview_stage"] not in VALID_INTERVIEW_STAGES:
+        raise HTTPException(status_code=400, detail="Invalid interview stage")
 
-    if payload["applied_date"] == "":
-        payload["applied_date"] = None
-    if payload["deadline"] == "":
-        payload["deadline"] = None
-    if payload["location"] == "":
-        payload["location"] = None
-    if payload["link"] == "":
-        payload["link"] = None
-    if payload["notes"] == "":
-        payload["notes"] = None
+    for key in [
+        "applied_date", "deadline", "location", "link", "notes", "recruiter_name",
+        "recruiter_email", "referral_name", "interview_stage", "next_action_date",
+        "last_contact_date", "resume_version", "cover_letter_version"
+    ]:
+        if payload.get(key) == "":
+            payload[key] = None
+
+    payload["activity_log"] = payload.get("activity_log") or None
 
     return payload
+
+def find_duplicate_job(db: Session, user_id: int, payload: dict, ignore_job_id: Optional[int] = None):
+    query = db.query(JobApplication).filter(JobApplication.user_id == user_id)
+    if ignore_job_id is not None:
+        query = query.filter(JobApplication.id != ignore_job_id)
+
+    if payload.get("link"):
+        duplicate = query.filter(JobApplication.link == payload["link"]).first()
+        if duplicate:
+            return duplicate
+
+    normalized_company = payload["company"].lower()
+    normalized_role = payload["role"].lower()
+    candidates = query.filter(JobApplication.company == payload["company"], JobApplication.role == payload["role"]).all()
+    for candidate in candidates:
+        if candidate.company.lower() == normalized_company and candidate.role.lower() == normalized_role:
+            return candidate
+    return None
 
 @app.post("/api/signup")
 def signup(user: UserAuth, db: Session = Depends(get_db)):
@@ -194,7 +281,15 @@ def get_jobs(current_user: User = Depends(get_current_user), db: Session = Depen
 
 @app.post("/api/jobs")
 def create_job(job: JobCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    new_job = JobApplication(**normalize_job_payload(job), user_id=current_user.id)
+    payload = normalize_job_payload(job)
+    duplicate = find_duplicate_job(db, current_user.id, payload)
+    if duplicate:
+        raise HTTPException(status_code=409, detail="This application is already being tracked")
+
+    payload["activity_log"] = append_activity(None, f"Application created in {payload['status']}")
+    if payload.get("source"):
+        payload["activity_log"] = append_activity(payload["activity_log"], f"Source set to {payload['source']}")
+    new_job = JobApplication(**payload, user_id=current_user.id)
     db.add(new_job)
     db.commit()
     db.refresh(new_job)
@@ -204,7 +299,27 @@ def create_job(job: JobCreate, current_user: User = Depends(get_current_user), d
 def update_job(job_id: int, job: JobCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     db_job = db.query(JobApplication).filter(JobApplication.id == job_id, JobApplication.user_id == current_user.id).first()
     if not db_job: raise HTTPException(status_code=404, detail="Job not found")
-    for key, value in normalize_job_payload(job).items():
+    payload = normalize_job_payload(job)
+    duplicate = find_duplicate_job(db, current_user.id, payload, ignore_job_id=job_id)
+    if duplicate:
+        raise HTTPException(status_code=409, detail="This application is already being tracked")
+
+    activity_log = db_job.activity_log
+    if db_job.status != payload["status"]:
+        activity_log = append_activity(activity_log, f"Status changed from {db_job.status} to {payload['status']}")
+    if db_job.interview_stage != payload.get("interview_stage"):
+        next_stage = payload.get("interview_stage") or "None"
+        activity_log = append_activity(activity_log, f"Interview stage updated to {next_stage}")
+    if db_job.next_action_date != payload.get("next_action_date"):
+        next_action = payload.get("next_action_date") or "cleared"
+        activity_log = append_activity(activity_log, f"Next action date set to {next_action}")
+    if db_job.follow_up_sent != payload.get("follow_up_sent"):
+        activity_log = append_activity(activity_log, "Follow-up marked as sent" if payload.get("follow_up_sent") else "Follow-up marked as pending")
+    if db_job.last_contact_date != payload.get("last_contact_date") and payload.get("last_contact_date"):
+        activity_log = append_activity(activity_log, f"Last contact updated to {payload['last_contact_date']}")
+
+    payload["activity_log"] = activity_log
+    for key, value in payload.items():
         setattr(db_job, key, value)
     db.commit()
     db.refresh(db_job)

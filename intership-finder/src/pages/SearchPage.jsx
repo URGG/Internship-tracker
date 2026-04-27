@@ -106,7 +106,7 @@ export default function SearchPage({
                     </a>
                   )}
                   <button className={`rbtn ${added ? "rbtn-done" : "rbtn-add"}`} onClick={() => !added && addFromSearch(r)}>
-                    {added ? "Added" : "+ Track"}
+                    {added ? "Saved" : "+ Save Lead"}
                   </button>
                 </div>
               </div>
