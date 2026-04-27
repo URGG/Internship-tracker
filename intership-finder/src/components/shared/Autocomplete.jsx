@@ -14,12 +14,37 @@ const COMMON_ROLES = [
 const TECH_CITIES = [
   "San Francisco, CA", "New York, NY", "Seattle, WA", "Austin, TX", "Boston, MA",
   "Palo Alto, CA", "Mountain View, CA", "Sunnyvale, CA", "San Jose, CA", "Los Angeles, CA",
+  "Los Altos, CA", "Los Altos Hills, CA", "Los Gatos, CA", "Los Alamitos, CA",
+  "Los Feliz, CA", "Los Banos, CA", "Los Osos, CA",
   "Chicago, IL", "Atlanta, GA", "Denver, CO", "Washington, D.C.", "San Diego, CA",
   "London, UK", "Berlin, Germany", "Paris, France", "Amsterdam, Netherlands", "Dublin, Ireland",
   "Stockholm, Sweden", "Toronto, Canada", "Vancouver, Canada", "Waterloo, Canada", "Montreal, Canada",
   "Bangalore, India", "Hyderabad, India", "Singapore", "Sydney, Australia", "Tokyo, Japan",
   "Tel Aviv, Israel", "Seoul, South Korea", "Remote"
 ];
+
+const rankSuggestions = (items, query) => {
+  const q = query.trim().toLowerCase();
+  if (!q) return items;
+
+  return [...items].sort((a, b) => {
+    const aLower = a.toLowerCase();
+    const bLower = b.toLowerCase();
+    const aStarts = aLower.startsWith(q);
+    const bStarts = bLower.startsWith(q);
+    if (aStarts !== bStarts) return aStarts ? -1 : 1;
+
+    const aWordStarts = aLower.split(/[\s,/-]+/).some((part) => part.startsWith(q));
+    const bWordStarts = bLower.split(/[\s,/-]+/).some((part) => part.startsWith(q));
+    if (aWordStarts !== bWordStarts) return aWordStarts ? -1 : 1;
+
+    const aIndex = aLower.indexOf(q);
+    const bIndex = bLower.indexOf(q);
+    if (aIndex !== bIndex) return aIndex - bIndex;
+
+    return a.localeCompare(b);
+  });
+};
 
 const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
   const [suggestions, setSuggestions] = useState([]);
@@ -49,8 +74,9 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
 
       // Local matches always instant
       const list = type === 'job' ? COMMON_ROLES : TECH_CITIES;
-      const localMatches = list.filter(item => 
-        item.toLowerCase().includes(value.toLowerCase())
+      const localMatches = rankSuggestions(
+        list.filter(item => item.toLowerCase().includes(value.toLowerCase())),
+        value
       );
 
       if (type === 'job') {
@@ -59,6 +85,10 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         return;
       }
 
+      // Show ranked local matches immediately for city search while remote results load.
+      setSuggestions(localMatches.slice(0, 7));
+      setNoResults(false);
+
       setLoading(true);
       try {
         // Proxy call to backend to avoid browser blocks
@@ -66,9 +96,14 @@ const Autocomplete = ({ type, value, onChange, placeholder, className }) => {
         const response = await fetch(url);
         const data = await response.json();
         
-        let apiResults = data._embedded?.['city:search-results']?.map(i => i.matching_full_name) || [];
-        
-        const combined = Array.from(new Set([...localMatches, ...apiResults]));
+        const apiResults = rankSuggestions(
+          (data._embedded?.['city:search-results'] || [])
+            .map((item) => item.matching_full_name || item?.matching_alternate_names?.[0]?.name || "")
+            .filter(Boolean),
+          value
+        );
+
+        const combined = rankSuggestions(Array.from(new Set([...localMatches, ...apiResults])), value);
         setSuggestions(combined.slice(0, 7));
         setNoResults(combined.length === 0);
       } catch (err) {
