@@ -191,8 +191,8 @@ a {
 }
 
 .sb-btn.on {
-    background: rgba(91, 127, 255, .12);
-    color: var(--acc)
+    background: var(--s2);
+    color: var(--txt)
 }
 
 .sb-btn.on::before {
@@ -226,8 +226,8 @@ a {
 }
 
 .sb-btn.on .sb-badge {
-    background: rgba(91, 127, 255, .2);
-    color: var(--acc)
+    background: var(--txt);
+    color: var(--bg)
 }
 
 .sb-div {
@@ -244,20 +244,22 @@ a {
     width: 100%;
     padding: 11px;
     border-radius: var(--r);
-    background: linear-gradient(135deg, var(--acc), #7b6ef6);
-    border: none;
+    background: var(--txt);
+    border: 1px solid var(--txt);
     color: var(--bg);
-    /* Flipped to dynamic var */
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     margin-top: auto;
     letter-spacing: .01em;
-    transition: opacity .15s
+    transition: transform .12s ease, background .12s ease, color .12s ease, border-color .12s ease
 }
 
 .sb-add:hover {
-    opacity: .88
+    background: transparent;
+    color: var(--txt);
+    border-color: var(--b1);
+    transform: translateY(-1px)
 }
 
 
@@ -347,22 +349,20 @@ a {
 }
 
 .tbtn:hover {
-    border-color: var(--acc);
-    color: var(--acc)
+    border-color: var(--txt);
+    color: var(--txt)
 }
 
 .tbtn-p {
-    background: linear-gradient(135deg, var(--acc), #7b6ef6);
-    border-color: transparent;
-    color: var(--bg);
-    /* Flipped to dynamic var */
+    background: var(--txt);
+    border-color: var(--txt);
+    color: var(--bg)
 }
 
 .tbtn-p:hover {
-    opacity: .88;
-    color: var(--bg);
-    /* Flipped to dynamic var */
-    border-color: transparent
+    background: transparent;
+    color: var(--txt);
+    border-color: var(--txt)
 }
 
 
@@ -379,7 +379,7 @@ a {
 
 .stats {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(5, 1fr);
     gap: 14px;
     margin-bottom: 28px
 }
@@ -478,9 +478,9 @@ a {
 }
 
 .chip.on {
-    background: rgba(91, 127, 255, .14);
-    border-color: var(--acc);
-    color: var(--acc)
+    background: var(--txt);
+    border-color: var(--txt);
+    color: var(--bg)
 }
 
 .vsw {
@@ -643,8 +643,8 @@ a {
 }
 
 .t-li {
-    background: rgba(91, 127, 255, .15);
-    color: var(--acc)
+    background: rgba(255, 255, 255, .12);
+    color: var(--txt)
 }
 
 .t-in {
@@ -775,8 +775,8 @@ a {
 }
 
 .sa {
-    background: rgba(91, 127, 255, .12);
-    color: var(--acc)
+    background: rgba(255, 255, 255, .12);
+    color: var(--txt)
 }
 
 .sp {
@@ -935,21 +935,23 @@ a {
 .go-btn {
     padding: 9px 22px;
     border-radius: var(--r);
-    background: linear-gradient(135deg, var(--acc), #7b6ef6);
-    border: none;
+    background: var(--txt);
+    border: 1px solid var(--txt);
     color: var(--bg);
-    /* Flipped to dynamic var */
     font-size: 13px;
     font-weight: 700;
     cursor: pointer;
     white-space: nowrap;
-    transition: opacity .15s;
+    transition: transform .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
     align-self: end;
     height: 40px
 }
 
 .go-btn:hover {
-    opacity: .85
+    background: transparent;
+    color: var(--txt);
+    border-color: var(--txt);
+    transform: translateY(-1px)
 }
 
 .go-btn:disabled {
@@ -1029,8 +1031,8 @@ a {
 }
 
 .rbtn:hover {
-    border-color: var(--acc);
-    color: var(--acc)
+    border-color: var(--txt);
+    color: var(--txt)
 }
 
 .rbtn-add {
@@ -1226,15 +1228,15 @@ a {
 }
 
 .mbtn-p {
-    background: linear-gradient(135deg, var(--acc), #7b6ef6);
-    border-color: transparent;
-    color: var(--bg);
-    /* Flipped to dynamic var */
+    background: var(--txt);
+    border-color: var(--txt);
+    color: var(--bg)
 }
 
 .mbtn-p:hover {
-    opacity: .88;
-    border-color: transparent
+    background: transparent;
+    color: var(--txt);
+    border-color: var(--txt)
 }
 
 .mbtn-g {
@@ -1279,10 +1281,10 @@ a {
 .ai-pill {
     font-size: 11px;
     font-family: var(--mono);
-    background: rgba(91, 127, 255, .1);
-    border: 1px solid rgba(91, 127, 255, .25);
+    background: var(--s2);
+    border: 1px solid var(--b0);
     border-radius: 6px;
-    color: var(--acc);
+    color: var(--txt);
     padding: 4px 10px;
     cursor: pointer;
     transition: all .12s;
@@ -1290,7 +1292,7 @@ a {
 }
 
 .ai-pill:hover {
-    background: rgba(91, 127, 255, .2)
+    border-color: var(--txt)
 }
 
 .ai-out {
@@ -1461,7 +1463,7 @@ code {
         grid-template-columns: repeat(3, 1fr)
     }
     .stats {
-        grid-template-columns: repeat(2, 1fr)
+        grid-template-columns: repeat(3, 1fr)
     }
     .sf-grid {
         grid-template-columns: 1fr 1fr;
@@ -1489,6 +1491,6 @@ code {
         grid-template-columns: 1fr
     }
     .stats {
-        grid-template-columns: 1fr 1fr
+        grid-template-columns: 1fr
     }
 }

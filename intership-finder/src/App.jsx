@@ -9,6 +9,8 @@ import SettingsPage from "./pages/SettingsPage";
 import Modal from "./components/shared/Modal";
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://internship-tracker-1-9w2v.onrender.com/api";
+const APPS_CACHE_KEY = "appsCache";
+const SUBS_CACHE_KEY = "subsCache";
 
 const normalizeApp = (app) => ({ ...BLANK, ...app, activity_log: app.activity_log || "[]" });
 
@@ -77,7 +79,7 @@ const LoginModal = ({ show, setShow, setToken, toast }) => {
             <input className="finp" type="password" value={pass} onChange={(e) => setPass(e.target.value)} required placeholder="********" />
           </div>
           <button className="mbtn mbtn-p" type="submit" disabled={loading} style={{ marginTop: 12, height: 40 }}>
-            {loading ? "Processing..." : isSignUp ? "Sign Up ->" : "Log In ->"}
+            {loading ? "Processing..." : isSignUp ? "Sign Up ↗" : "Log In ↗"}
           </button>
         </form>
 
@@ -95,7 +97,14 @@ const LoginModal = ({ show, setShow, setToken, toast }) => {
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [showLogin, setShowLogin] = useState(false);
-  const [apps, setApps] = useState([]);
+  const [apps, setApps] = useState(() => {
+    try {
+      const cached = localStorage.getItem(APPS_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [view, setView] = useState("board");
   const [page, setPage] = useState("tracker");
   const [srcF, setSrcF] = useState("all");
@@ -129,7 +138,14 @@ export default function App() {
   const [jsAdded, setJsAdded] = useState(new Set());
 
   const [toasts, setToasts] = useState([]);
-  const [subs, setSubs] = useState([]);
+  const [subs, setSubs] = useState(() => {
+    try {
+      const cached = localStorage.getItem(SUBS_CACHE_KEY);
+      return cached ? JSON.parse(cached) : [];
+    } catch {
+      return [];
+    }
+  });
   const [hQ, setHQ] = useState("");
   const [hL, setHL] = useState("");
   const [hLoading, setHLoading] = useState(false);
@@ -143,6 +159,14 @@ export default function App() {
   useEffect(() => {
     localStorage.setItem("resumeTxt", resumeTxt);
   }, [resumeTxt]);
+
+  useEffect(() => {
+    localStorage.setItem(APPS_CACHE_KEY, JSON.stringify(apps));
+  }, [apps]);
+
+  useEffect(() => {
+    localStorage.setItem(SUBS_CACHE_KEY, JSON.stringify(subs));
+  }, [subs]);
 
   const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
 
@@ -184,20 +208,22 @@ export default function App() {
     if (!token) {
       setApps([]);
       setSubs([]);
+      localStorage.removeItem(APPS_CACHE_KEY);
+      localStorage.removeItem(SUBS_CACHE_KEY);
       return;
     }
 
     const headers = { Authorization: `Bearer ${token}` };
-    fetch(`${API_BASE}/jobs`, { headers })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setApps(data.map(normalizeApp));
-      });
-
-    fetch(`${API_BASE}/subscriptions`, { headers })
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data)) setSubs(data);
+    Promise.all([
+      fetch(`${API_BASE}/jobs`, { headers }).then((res) => res.json()),
+      fetch(`${API_BASE}/subscriptions`, { headers }).then((res) => res.json()),
+    ])
+      .then(([jobsData, subsData]) => {
+        if (Array.isArray(jobsData)) setApps(jobsData.map(normalizeApp));
+        if (Array.isArray(subsData)) setSubs(subsData);
+      })
+      .catch(() => {
+        toast("Using cached jobs while the backend wakes up", "#fbbf24");
       });
   }, [token]);
 

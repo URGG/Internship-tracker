@@ -134,16 +134,15 @@ export default function TrackerPage({
                 <th>Role</th>
                 <th>Status</th>
                 <th>Source</th>
-                <th>Next Action</th>
-                <th>Contact</th>
-                <th>Versions</th>
+                <th>Applied</th>
+                <th>Deadline</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8}>
+                  <td colSpan={7}>
                     <div className="empty">
                       <div className="empty-ico">o</div>
                       <p>no applications found</p>
@@ -152,7 +151,7 @@ export default function TrackerPage({
                 </tr>
               )}
               {filtered.map((a) => {
-                const nextActionLabel = a.next_action_date ? fmt(a.next_action_date) : a.deadline ? `deadline ${fmt(a.deadline)}` : "-";
+                const du = daysUntil(a.deadline);
                 return (
                   <tr key={a.id} onClick={() => openEdit(a)}>
                     <td style={{ fontWeight: 700 }}>{a.company}</td>
@@ -169,18 +168,15 @@ export default function TrackerPage({
                     <td>
                       <span className={`tag ${srcTag(a.source)}`}>{a.source}</span>
                     </td>
-                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: isFollowUpDue(a) ? "var(--red)" : "var(--txt3)" }}>{nextActionLabel}</td>
-                    <td style={{ fontSize: 12, color: "var(--txt2)" }}>{a.recruiter_name || a.recruiter_email || "-"}</td>
-                    <td style={{ fontSize: 12, color: "var(--txt2)" }}>
-                      {[a.resume_version && `R:${a.resume_version}`, a.cover_letter_version && `C:${a.cover_letter_version}`].filter(Boolean).join(" | ") || "-"}
-                    </td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--txt3)" }}>{fmt(a.applied_date)}</td>
+                    <td style={{ fontFamily: "var(--mono)", fontSize: 12, color: du !== null && du <= 3 ? "var(--red)" : du !== null && du <= 7 ? "var(--amb)" : "var(--txt3)" }}>{fmt(a.deadline)}</td>
                     <td
                       onClick={(e) => {
                         e.stopPropagation();
                         openCover(a);
                       }}
                     >
-                      <button className="rbtn">AI Cover</button>
+                      <button className="rbtn">AI Cover ↗</button>
                     </td>
                   </tr>
                 );
