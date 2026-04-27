@@ -192,10 +192,7 @@ def delete_job(job_id: int, current_user: User = Depends(get_current_user), db: 
     db.commit()
     return {"message": "Deleted"}
 
-@app.get("/api/search")
-def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
-    # ... (existing code)
-    pass
+import json
 
 @app.get("/api/cities")
 def proxy_cities(q: str):
@@ -207,10 +204,120 @@ def proxy_cities(q: str):
     except Exception as e:
         return {"_embedded": {"city:search-results": []}}
 
+class IntelRequest(BaseModel):
+    company: str
+    role: str
+
+@app.get("/api/search")
+def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
+    if not current_user.enc_rapid_key:
+        raise HTTPException(status_code=400, detail="Add RapidAPI Key in Settings first")
+    
+    user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    url = "https://jsearch.p.rapidapi.com/search"
+    params = {
+        "query": f"{query} in {location}",
+        "page": "1",
+        "num_pages": "1",
+        "date_posted": datePosted,
+        "employment_types": jobType
+    }
+    headers = {
+        "X-RapidAPI-Key": user_rapid_key,
+        "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
+    }
+    
+    try:
+        response = requests.get(url, headers=headers, params=params, timeout=10)
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail="RapidAPI Error")
+        
+        data = response.json().get("data", [])
+        results = []
+        for j in data:
+            results.append({
+                "_id": j.get("job_id"),
+                "company": j.get("employer_name", "Unknown"),
+                "role": j.get("job_title", "Role"),
+                "source": "Search",
+                "remote": bool(j.get("job_is_remote")),
+                "location": f"{j.get('job_city', '')}, {j.get('job_state', '')}".strip(", "),
+                "posted": j.get("job_posted_at_datetime_utc", "")[:10],
+                "link": j.get("job_apply_link") or j.get("job_google_link"),
+                "desc": j.get("job_description", "")
+            })
+        return results
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.post("/api/generate-cover")
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
-    # ... (existing code)
-    pass
+    if not current_user.enc_gemini_key:
+        raise HTTPException(status_code=400, detail="Add Gemini API Key in Settings first")
+    
+    gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    genai.configure(api_key=gemini_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = f"""
+    Write a professional and concise cover letter for an internship application.
+    Company: {req.company}
+    Role: {req.role}
+    Job Description: {req.description}
+    Applicant Background: {req.context}
+    
+    Keep it under 300 words. Focus on how the applicant's skills match the job description.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        return {"text": response.text}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+
+@app.post("/api/company-intel")
+def get_company_intel(req: IntelRequest, current_user: User = Depends(get_current_user)):
+    if not current_user.enc_gemini_key:
+        raise HTTPException(status_code=400, detail="Add Gemini API Key in Settings first")
+    
+    gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    genai.configure(api_key=gemini_key)
+    # Using flash for speed
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    
+    prompt = f"""
+    Provide professional insights for an internship/job applicant for the company '{req.company}' and role '{req.role}'.
+    Return the response in EXACTLY this JSON format:
+    {{
+        "estimated_salary": "e.g., $35 - $55/hr",
+        "culture_pros": ["pro 1", "pro 2"],
+        "culture_cons": ["con 1", "con 2"],
+        "interview_difficulty": "e.g., Medium-Hard",
+        "recent_news": "Brief one sentence about recent company performance or news."
+    }}
+    Be concise and realistic. If unsure, provide best estimates based on industry standards for this company.
+    Do not include any other text or markdown formatting outside the JSON.
+    """
+    
+    try:
+        response = model.generate_content(prompt)
+        content = response.text.strip()
+        # Handle cases where Gemini might still wrap in markdown
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        
+        return json.loads(content)
+    except Exception as e:
+        # Fallback if AI fails to return valid JSON
+        return {
+            "estimated_salary": "N/A",
+            "culture_pros": ["Could not fetch intel"],
+            "culture_cons": ["Please check manually"],
+            "interview_difficulty": "Unknown",
+            "recent_news": f"Error: {str(e)}"
+        }
 
 @app.get("/api/subscriptions")
 def get_subs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

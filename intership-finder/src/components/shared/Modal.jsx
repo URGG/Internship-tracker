@@ -3,7 +3,8 @@ import React from 'react';
 export default function Modal({
   modal, setModal, form, setForm, setF, eid, save, del,
   coverApp, coverJob, setCoverJob, resumeTxt, coverLoad, 
-  coverOut, setCoverOut, genCover, openCover, toast
+  coverOut, setCoverOut, genCover, openCover, 
+  intelData, intelLoad, fetchIntel, toast
 }) {
   
   if (!modal) return null;
@@ -19,7 +20,7 @@ export default function Modal({
   return (
     <div className="overlay" onClick={() => setModal(null)}>
       {/* Stop clicks inside the modal from closing it */}
-      <div className="modal" onClick={(e) => e.stopPropagation()}>
+      <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: modal === "intel" ? 500 : 600 }}>
         
         {/* ========================================== */}
         {/* VIEW 1: ADD / EDIT JOB                     */}
@@ -28,12 +29,17 @@ export default function Modal({
           <>
             <div className="mhead">
               <h2>{eid ? "Edit Application" : "New Application"}</h2>
-              <div className="mhead-right">
-                {/* ✨ THE MAGIC BUTTON ✨ */}
+              <div className="mhead-right" style={{ gap: 8 }}>
+                {/* ✨ THE MAGIC BUTTONS ✨ */}
                 {eid && (
-                  <button className="ai-pill" onClick={() => openCover(form)}>
-                    ✨ AI Cover Letter
-                  </button>
+                  <>
+                    <button className="ai-pill" onClick={() => fetchIntel(form)} title="Get AI Insights">
+                      💡 Intel
+                    </button>
+                    <button className="ai-pill" onClick={() => openCover(form)}>
+                      ✨ AI Cover
+                    </button>
+                  </>
                 )}
                 <button className="closex" onClick={() => setModal(null)}>×</button>
               </div>
@@ -164,6 +170,67 @@ export default function Modal({
                   Copy to Clipboard
                 </button>
               )}
+            </div>
+          </>
+        )}
+
+        {/* ========================================== */}
+        {/* VIEW 3: COMPANY INTEL                      */}
+        {/* ========================================== */}
+        {modal === "intel" && (
+          <>
+            <div className="mhead">
+              <h2>💡 Company Intel: {form.company}</h2>
+              <button className="closex" onClick={() => setModal("edit")}>×</button>
+            </div>
+
+            <div className="mbody">
+              {intelLoad ? (
+                <div className="ai-loading">
+                  <div className="spin"></div>
+                  Analyzing company data...
+                </div>
+              ) : intelData ? (
+                <div style={{ display: "flex", flexDirection: "column", gap: "20px" }}>
+                  <div className="scard" style={{ margin: 0, padding: "16px", background: "var(--s3)" }}>
+                    <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "4px", textTransform: "uppercase", letterSpacing: "0.5px" }}>Estimated Salary</div>
+                    <div style={{ fontSize: "20px", fontWeight: "700", color: "var(--grn)" }}>{intelData.estimated_salary}</div>
+                  </div>
+
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
+                    <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>✅ Pros</div>
+                      <ul style={{ paddingLeft: "16px", fontSize: "13px", color: "var(--txt2)" }}>
+                        {intelData.culture_pros.map((p, i) => <li key={i}>{p}</li>)}
+                      </ul>
+                    </div>
+                    <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>❌ Cons</div>
+                      <ul style={{ paddingLeft: "16px", fontSize: "13px", color: "var(--txt2)" }}>
+                        {intelData.culture_cons.map((c, i) => <li key={i}>{c}</li>)}
+                      </ul>
+                    </div>
+                  </div>
+
+                  <div className="fg2">
+                    <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "4px" }}>Interview Difficulty</div>
+                      <div style={{ fontWeight: "600" }}>{intelData.interview_difficulty}</div>
+                    </div>
+                    <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "4px" }}>Recent News</div>
+                      <div style={{ fontSize: "13px", lineHeight: "1.4" }}>{intelData.recent_news}</div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="empty">No intel found.</div>
+              )}
+            </div>
+
+            <div className="mfoot">
+              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>Back to Details</button>
+              <button className="mbtn mbtn-p" onClick={() => fetchIntel(form)}>Refresh Intel ⟳</button>
             </div>
           </>
         )}

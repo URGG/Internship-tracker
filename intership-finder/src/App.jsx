@@ -110,6 +110,10 @@ export default function App() {
   const [coverJob, setCoverJob] = useState("");
   const [coverOut, setCoverOut] = useState("");
   const [coverLoad, setCoverLoad] = useState(false);
+
+  // Company Intel State
+  const [intelData, setIntelData] = useState(null);
+  const [intelLoad, setIntelLoad] = useState(false);
   
   // Settings & Context
   const [resumeTxt, setResumeTxt] = useState(() => localStorage.getItem("resumeTxt") || "");
@@ -308,6 +312,21 @@ export default function App() {
     setCoverLoad(false);
   };
 
+  const fetchIntel = async (a) => {
+    if (!requireAuth()) return;
+    setIntelLoad(true); setIntelData(null); setModal("intel");
+    try {
+      const res = await fetch(`${API_BASE}/company-intel`, {
+        method: "POST", headers: authHeaders,
+        body: JSON.stringify({ company: a.company, role: a.role })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to fetch intel");
+      setIntelData(data);
+    } catch (e) { toast(e.message, "#f87171"); setModal("edit"); }
+    finally { setIntelLoad(false); }
+  };
+
   // --- UI LOGIC ---
   const filtered = useMemo(() => apps.filter((a) => {
     if (srcF !== "all" && a.source !== srcF) return false;
@@ -447,7 +466,16 @@ export default function App() {
       </div>
 
       <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} />
-      <Modal modal={modal} setModal={setModal} form={form} setForm={setForm} setF={setF} eid={eid} apps={apps} save={save} del={del} coverApp={coverApp} coverJob={coverJob} setCoverJob={setCoverJob} resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} coverLoad={coverLoad} coverOut={coverOut} setCoverOut={setCoverOut} genCover={genCover} openCover={openCover} toast={toast} />
+      <Modal 
+        modal={modal} setModal={setModal} 
+        form={form} setForm={setForm} setF={setF} eid={eid} apps={apps} save={save} del={del} 
+        coverApp={coverApp} coverJob={coverJob} setCoverJob={setCoverJob} 
+        resumeTxt={resumeTxt} setResumeTxt={setResumeTxt} 
+        coverLoad={coverLoad} coverOut={coverOut} setCoverOut={setCoverOut} 
+        genCover={genCover} openCover={openCover} 
+        intelData={intelData} intelLoad={intelLoad} fetchIntel={fetchIntel}
+        toast={toast} 
+      />
       <div className="toasts">{toasts.map(t => (<div key={t.id} className="toast"><div className="tdot" style={{ background: t.color }} />{t.msg}</div>))}</div>
     </>
   );
