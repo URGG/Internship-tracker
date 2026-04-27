@@ -257,7 +257,7 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     
     gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
     genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-pro')
     
     prompt = f"""
     Write a professional and concise cover letter for an internship application.
@@ -385,4 +385,4 @@ def run_hunter(current_user: User = Depends(get_current_user), db: Session = Dep
             print(f"Hunter failed for {sub.query}: {str(e)}")
 
     db.commit()
-    return {"message": f"Hunter finished! Found {new_jobs_count} new opportunities.", "added": new_jobs_count}
+    return {"message": f"Hunter finished! Found {new_jobs_count} new opportunities.", "added": new_jobs_count}d": new_jobs_count}
