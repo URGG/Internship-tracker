@@ -1,16 +1,30 @@
-import React from 'react';
-import { STATUSES } from '../../utils/constants';
+import React from "react";
+import { STATUSES } from "../../utils/constants";
 
 export default function Modal({
-  modal, setModal, form, setForm, setF, eid, save, del,
-  coverApp, coverJob, setCoverJob, resumeTxt, coverLoad, 
-  coverOut, setCoverOut, genCover, openCover, 
-  intelData, intelLoad, fetchIntel, toast
+  modal,
+  setModal,
+  form,
+  setForm,
+  setF,
+  eid,
+  save,
+  del,
+  coverApp,
+  coverJob,
+  setCoverJob,
+  resumeTxt,
+  coverLoad,
+  coverOut,
+  genCover,
+  openCover,
+  intelData,
+  intelLoad,
+  fetchIntel,
+  toast,
 }) {
-  
   if (!modal) return null;
 
-  // Helper to copy the generated letter to your clipboard
   const handleCopy = () => {
     navigator.clipboard.writeText(coverOut);
     toast("Copied to clipboard!", "#5b7fff");
@@ -18,29 +32,25 @@ export default function Modal({
 
   return (
     <div className="overlay" onClick={() => setModal(null)}>
-      {/* Stop clicks inside the modal from closing it */}
       <div className="modal" onClick={(e) => e.stopPropagation()} style={{ maxWidth: modal === "intel" ? 500 : 600 }}>
-        
-        {/* ========================================== */}
-        {/* VIEW 1: ADD / EDIT JOB                     */}
-        {/* ========================================== */}
         {modal === "edit" && (
           <>
             <div className="mhead">
               <h2>{eid ? "Edit Application" : "New Application"}</h2>
               <div className="mhead-right" style={{ gap: 8 }}>
-                {/* ✨ THE MAGIC BUTTONS ✨ */}
                 {eid && (
                   <>
                     <button className="ai-pill" onClick={() => fetchIntel(form)} title="Get AI Insights">
-                      💡 Intel
+                      Intel
                     </button>
                     <button className="ai-pill" onClick={() => openCover(form)}>
-                      ✨ AI Cover
+                      AI Cover
                     </button>
                   </>
                 )}
-                <button className="closex" onClick={() => setModal(null)}>×</button>
+                <button className="closex" onClick={() => setModal(null)}>
+                  x
+                </button>
               </div>
             </div>
 
@@ -60,7 +70,11 @@ export default function Modal({
                 <div className="frow">
                   <span className="flbl">Status</span>
                   <select className="finp" value={form.status || "To Do"} onChange={setF("status")}>
-                    {STATUSES.map(s => <option key={s} value={s}>{s}</option>)}
+                    {STATUSES.map((s) => (
+                      <option key={s} value={s}>
+                        {s}
+                      </option>
+                    ))}
                   </select>
                 </div>
                 <div className="frow">
@@ -108,27 +122,30 @@ export default function Modal({
             <div className="mfoot" style={{ justifyContent: eid ? "space-between" : "flex-end" }}>
               {eid && <button className="mbtn mbtn-d" onClick={del}>Delete</button>}
               <div style={{ display: "flex", gap: "8px" }}>
-                <button className="mbtn mbtn-g" onClick={() => setModal(null)}>Cancel</button>
-                <button className="mbtn mbtn-p" onClick={save}>Save Changes</button>
+                <button className="mbtn mbtn-g" onClick={() => setModal(null)}>
+                  Cancel
+                </button>
+                <button className="mbtn mbtn-p" onClick={save}>
+                  Save Changes
+                </button>
               </div>
             </div>
           </>
         )}
 
-        {/* ========================================== */}
-        {/* VIEW 2: AI COVER LETTER GENERATOR          */}
-        {/* ========================================== */}
         {modal === "cover" && (
           <>
             <div className="mhead">
-              <h2>✨ Generate Cover Letter</h2>
-              <button className="closex" onClick={() => { setModal("edit"); setCoverOut(""); }}>×</button>
+              <h2>Generate Cover Letter</h2>
+              <button className="closex" onClick={() => { setModal("edit"); setCoverOut(""); }}>
+                x
+              </button>
             </div>
 
             <div className="mbody">
               {!resumeTxt ? (
                 <div className="note" style={{ borderColor: "var(--red)", color: "var(--red)", background: "rgba(248, 113, 113, 0.05)" }}>
-                  <strong>⚠️ Missing Resume Context:</strong> You haven't added your resume yet! Go to the <strong>Settings</strong> tab, paste your resume text, and save your Gemini API key before using this feature.
+                  <strong>Missing Resume Context:</strong> You haven't added your resume yet. Go to the <strong>Settings</strong> tab, paste your resume text, and save your Gemini API key before using this feature.
                 </div>
               ) : (
                 <div className="note">
@@ -139,8 +156,8 @@ export default function Modal({
               {!coverOut && !coverLoad && (
                 <div className="frow">
                   <span className="flbl">Paste Job Description (Optional but recommended)</span>
-                  <textarea 
-                    className="finp fta" 
+                  <textarea
+                    className="finp fta"
                     placeholder="Paste the requirements or description from the job posting here so the AI can tailor the letter..."
                     value={coverJob}
                     onChange={(e) => setCoverJob(e.target.value)}
@@ -149,20 +166,20 @@ export default function Modal({
                 </div>
               )}
 
-              {/* The Loading Spinner */}
               {coverLoad && (
                 <div className="ai-loading">
                   <div className="spin"></div>
-                  Generating your masterpiece...
+                  Generating your draft...
                 </div>
               )}
 
-              {/* The AI Output Box */}
               {coverOut && !coverLoad && (
                 <div className="frow">
                   <span className="flbl" style={{ color: "var(--acc)", display: "flex", justifyContent: "space-between" }}>
                     Result
-                    <span style={{ cursor: "pointer", color: "var(--txt2)" }} onClick={handleCopy}>📋 Copy</span>
+                    <span style={{ cursor: "pointer", color: "var(--txt2)" }} onClick={handleCopy}>
+                      Copy
+                    </span>
                   </span>
                   <div className="ai-out">{coverOut}</div>
                 </div>
@@ -170,15 +187,13 @@ export default function Modal({
             </div>
 
             <div className="mfoot">
-              <button className="mbtn mbtn-g" onClick={() => { setModal("edit"); setCoverOut(""); }}>Back</button>
-              
+              <button className="mbtn mbtn-g" onClick={() => { setModal("edit"); setCoverOut(""); }}>
+                Back
+              </button>
+
               {!coverOut ? (
-                <button 
-                  className="mbtn mbtn-p" 
-                  onClick={genCover} 
-                  disabled={!resumeTxt || coverLoad}
-                >
-                  {coverLoad ? "Generating..." : "Generate ✨"}
+                <button className="mbtn mbtn-p" onClick={genCover} disabled={!resumeTxt || coverLoad}>
+                  {coverLoad ? "Generating..." : "Generate"}
                 </button>
               ) : (
                 <button className="mbtn mbtn-p" onClick={handleCopy}>
@@ -189,14 +204,13 @@ export default function Modal({
           </>
         )}
 
-        {/* ========================================== */}
-        {/* VIEW 3: COMPANY INTEL                      */}
-        {/* ========================================== */}
         {modal === "intel" && (
           <>
             <div className="mhead">
-              <h2>💡 Company Intel: {form.company}</h2>
-              <button className="closex" onClick={() => setModal("edit")}>×</button>
+              <h2>Company Intel: {form.company}</h2>
+              <button className="closex" onClick={() => setModal("edit")}>
+                x
+              </button>
             </div>
 
             <div className="mbody">
@@ -214,15 +228,19 @@ export default function Modal({
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "16px" }}>
                     <div className="scard" style={{ margin: 0, padding: "16px" }}>
-                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>✅ Pros</div>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>Pros</div>
                       <ul style={{ paddingLeft: "16px", fontSize: "13px", color: "var(--txt2)" }}>
-                        {intelData.culture_pros.map((p, i) => <li key={i}>{p}</li>)}
+                        {intelData.culture_pros.map((p, i) => (
+                          <li key={i}>{p}</li>
+                        ))}
                       </ul>
                     </div>
                     <div className="scard" style={{ margin: 0, padding: "16px" }}>
-                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>❌ Cons</div>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>Cons</div>
                       <ul style={{ paddingLeft: "16px", fontSize: "13px", color: "var(--txt2)" }}>
-                        {intelData.culture_cons.map((c, i) => <li key={i}>{c}</li>)}
+                        {intelData.culture_cons.map((c, i) => (
+                          <li key={i}>{c}</li>
+                        ))}
                       </ul>
                     </div>
                   </div>
@@ -244,12 +262,15 @@ export default function Modal({
             </div>
 
             <div className="mfoot">
-              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>Back to Details</button>
-              <button className="mbtn mbtn-p" onClick={() => fetchIntel(form)}>Refresh Intel ⟳</button>
+              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>
+                Back to Details
+              </button>
+              <button className="mbtn mbtn-p" onClick={() => fetchIntel(form)}>
+                Refresh Intel
+              </button>
             </div>
           </>
         )}
-
       </div>
     </div>
   );
