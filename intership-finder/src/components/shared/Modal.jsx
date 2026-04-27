@@ -1,6 +1,7 @@
 import React from "react";
 import { INTERVIEW_STAGES, STATUSES } from "../../utils/constants";
 import { parseActivityLog } from "../../utils/helpers";
+import Icon from "./Icon";
 
 export default function Modal({
   modal,
@@ -66,7 +67,7 @@ export default function Modal({
                   </>
                 )}
                 <button className="closex" onClick={() => setModal(null)}>
-                  x
+                  <Icon name="close" size={18} />
                 </button>
               </div>
             </div>
@@ -227,7 +228,7 @@ export default function Modal({
             <div className="mhead">
               <h2>Generate Cover Letter</h2>
               <button className="closex" onClick={() => setModal("edit")}>
-                x
+                <Icon name="close" size={18} />
               </button>
             </div>
 
@@ -291,7 +292,7 @@ export default function Modal({
             <div className="mhead">
               <h2>Company Intel: {form.company}</h2>
               <button className="closex" onClick={() => setModal("edit")}>
-                x
+                <Icon name="close" size={18} />
               </button>
             </div>
 
@@ -359,7 +360,7 @@ export default function Modal({
             <div className="mhead">
               <h2>Resume Match</h2>
               <button className="closex" onClick={() => setModal("edit")}>
-                x
+                <Icon name="close" size={18} />
               </button>
             </div>
 
@@ -430,7 +431,7 @@ export default function Modal({
             <div className="mhead">
               <h2>Follow-up Draft</h2>
               <button className="closex" onClick={() => setModal("edit")}>
-                x
+                <Icon name="close" size={18} />
               </button>
             </div>
 

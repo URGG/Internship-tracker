@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
+import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import TrackerPage from "./pages/TrackerPage";
 
@@ -65,10 +66,10 @@ const LoginModal = ({ show, setShow, setToken, toast }) => {
     <div className="overlay">
       <div className="modal" style={{ maxWidth: 400, padding: "32px 40px" }}>
         <button className="closex" style={{ position: "absolute", top: 16, right: 16 }} onClick={() => setShow(false)}>
-          x
+          <Icon name="close" size={18} />
         </button>
         <div className="sb-logo" style={{ justifyContent: "center", marginBottom: 32 }}>
-          <div className="sb-logo-mark">i</div>
+          <div className="sb-logo-mark"><Icon name="logo" size={16} strokeWidth={2} /></div>
           <div className="sb-logo-text">
             intern<span>.track</span>
           </div>
@@ -685,13 +686,13 @@ export default function App() {
   };
 
   const navItems = [
-    { id: "tracker", icon: "[]", label: "Tracker", count: apps.length },
-    { id: "search", icon: "o", label: "Job Search", count: jsRes.length || null },
-    { id: "analytics", icon: "A", label: "Analytics", count: null },
-    { id: "wishlist", icon: "<>", label: "To Do", count: apps.filter((a) => a.status === "To Do").length },
-    { id: "ivw", icon: "()", label: "Interviews", count: apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length },
-    { id: "offers", icon: "*", label: "Offers", count: apps.filter((a) => a.status === "Offer").length },
-    { id: "settings", icon: "#", label: "Settings", count: null },
+    { id: "tracker", icon: "tracker", label: "Tracker", count: apps.length },
+    { id: "search", icon: "search", label: "Job Search", count: jsRes.length || null },
+    { id: "analytics", icon: "analytics", label: "Analytics", count: null },
+    { id: "wishlist", icon: "todo", label: "To Do", count: apps.filter((a) => a.status === "To Do").length },
+    { id: "ivw", icon: "interview", label: "Interviews", count: apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length },
+    { id: "offers", icon: "offer", label: "Offers", count: apps.filter((a) => a.status === "Offer").length },
+    { id: "settings", icon: "settings", label: "Settings", count: null },
   ];
 
   return (
@@ -699,7 +700,7 @@ export default function App() {
       <div className="shell">
         <nav className="sb">
           <div className="sb-logo">
-            <div className="sb-logo-mark">i</div>
+            <div className="sb-logo-mark"><Icon name="logo" size={16} strokeWidth={2} /></div>
             <div className="sb-logo-text">
               intern<span>.track</span>
             </div>
@@ -707,7 +708,7 @@ export default function App() {
           <span className="sb-sect">Navigate</span>
           {navItems.slice(0, 3).map((n) => (
             <button key={n.id} className={`sb-btn${page === n.id ? " on" : ""}`} onClick={() => handleNav(n.id)}>
-              <span className="sb-icon">{n.icon}</span>
+              <span className="sb-icon"><Icon name={n.icon} size={16} /></span>
               {n.label} {n.count !== null && <span className="sb-badge">{n.count}</span>}
             </button>
           ))}
@@ -723,27 +724,27 @@ export default function App() {
               }`}
               onClick={() => handleNav(n.id)}
             >
-              <span className="sb-icon">{n.icon}</span>
+              <span className="sb-icon"><Icon name={n.icon} size={16} /></span>
               {n.label} <span className="sb-badge">{n.count}</span>
             </button>
           ))}
           <div className="sb-div" />
           <button className={`sb-btn${page === "settings" ? " on" : ""}`} onClick={() => setPage("settings")}>
-            <span className="sb-icon">#</span>Settings
+            <span className="sb-icon"><Icon name="settings" size={16} /></span>Settings
           </button>
 
           <div style={{ marginTop: "auto" }}>
             {!token ? (
               <button className="sb-btn" onClick={() => setShowLogin(true)} style={{ color: "var(--acc)", fontWeight: 700 }}>
-                <span className="sb-icon">-&gt;</span>Sign In
+                <span className="sb-icon"><Icon name="login" size={16} /></span>Sign In
               </button>
             ) : (
               <button className="sb-btn" onClick={handleLogout} style={{ color: "var(--txt3)" }}>
-                <span className="sb-icon">&lt;-</span>Log Out
+                <span className="sb-icon"><Icon name="logout" size={16} /></span>Log Out
               </button>
             )}
             <button className="sb-add" onClick={openAdd} style={{ marginTop: 12 }}>
-              + New application
+              <Icon name="plus" size={16} /> New application
             </button>
           </div>
         </nav>
@@ -764,14 +765,14 @@ export default function App() {
 
             {page === "tracker" && (
               <div className="sbox">
-                <span className="sbox-ico">?</span>
+                <span className="sbox-ico"><Icon name="search" size={14} strokeWidth={2} /></span>
                 <input placeholder="Search..." value={q} onChange={(e) => setQ(e.target.value)} />
               </div>
             )}
 
             {page === "tracker" && (
               <button className="tbtn tbtn-p" onClick={openAdd}>
-                + Add
+                <Icon name="plus" size={15} /> Add
               </button>
             )}
 

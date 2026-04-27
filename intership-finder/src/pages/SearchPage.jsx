@@ -1,6 +1,7 @@
 import { JOB_TYPES, DATE_OPTS } from "../utils/constants";
 import { srcTag } from "../utils/helpers";
 import Autocomplete from "../components/shared/Autocomplete";
+import Icon from "../components/shared/Icon";
 
 export default function SearchPage({
   jsQ,
@@ -73,7 +74,7 @@ export default function SearchPage({
             </select>
           </div>
           <button className="go-btn" onClick={runSearch} disabled={jsLoad}>
-            {jsLoad ? "Searching..." : "Search ->"}
+            {jsLoad ? "Searching..." : "Search"}
           </button>
         </div>
 
@@ -88,7 +89,7 @@ export default function SearchPage({
           {jsErr && !jsLoad && (
             <div className="empty">
               <div className="empty-ico" style={{ color: "var(--red)" }}>
-                x
+                <Icon name="error" size={36} strokeWidth={1.7} />
               </div>
               <p style={{ color: "var(--red)", fontWeight: 600 }}>{jsErr}</p>
               <p style={{ fontSize: "11px", marginTop: "8px", color: "var(--txt3)" }}>Check your FastAPI terminal and .env file to ensure keys are loaded.</p>
@@ -97,7 +98,7 @@ export default function SearchPage({
 
           {!jsLoad && !jsErr && jsRes.length === 0 && (
             <div className="empty">
-              <div className="empty-ico">o</div>
+              <div className="empty-ico"><Icon name="empty" size={36} strokeWidth={1.7} /></div>
               <p>Search above to pull live jobs from LinkedIn, Indeed, Glassdoor and more</p>
             </div>
           )}
@@ -120,7 +121,7 @@ export default function SearchPage({
                   <div className="racts">
                     {r.link && (
                       <a href={r.link} target="_blank" rel="noreferrer">
-                        <button className="rbtn">View -&gt;</button>
+                        <button className="rbtn"><Icon name="external" size={14} /> View</button>
                       </a>
                     )}
                     <button className={`rbtn ${added ? "rbtn-done" : "rbtn-add"}`} onClick={() => !added && addFromSearch(r)}>

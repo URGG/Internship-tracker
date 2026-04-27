@@ -148,6 +148,10 @@ a {
     flex-shrink: 0
 }
 
+.sb-logo-mark svg {
+    display: block
+}
+
 .sb-logo-text {
     font-size: 17px;
     font-weight: 800;
@@ -207,9 +211,10 @@ a {
 }
 
 .sb-icon {
-    font-size: 14px;
     width: 20px;
-    text-align: center;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     flex-shrink: 0
 }
 
@@ -328,7 +333,9 @@ a {
     position: absolute;
     left: 11px;
     color: var(--txt3);
-    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     pointer-events: none
 }
 
@@ -493,6 +500,9 @@ a {
 }
 
 .vsw-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 6px 14px;
     font-size: 12px;
     font-weight: 600;
@@ -1018,6 +1028,9 @@ a {
 }
 
 .rbtn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
     padding: 7px 13px;
     border-radius: var(--r);
     border: 1px solid var(--b1);
@@ -1062,7 +1075,9 @@ a {
 }
 
 .empty-ico {
-    font-size: 36px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     margin-bottom: 14px;
     opacity: .35
 }
@@ -1266,7 +1281,11 @@ a {
     background: none;
     border: none;
     color: var(--txt3);
-    font-size: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 30px;
+    height: 30px;
     cursor: pointer;
     line-height: 1;
     padding: 2px 4px;

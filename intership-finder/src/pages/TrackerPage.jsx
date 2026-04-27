@@ -1,6 +1,7 @@
 import { SOURCES, KCOLS, SD, SP } from "../utils/constants";
 import { fmt, daysUntil, isFollowUpDue, parseActivityLog, srcTag } from "../utils/helpers";
 import Card from "../components/shared/Card";
+import Icon from "../components/shared/Icon";
 
 export default function TrackerPage({
   stats,
@@ -87,13 +88,13 @@ export default function TrackerPage({
         ))}
         <div className="vsw">
           <button className={`vsw-btn${view === "board" ? " on" : ""}`} onClick={() => setView("board")}>
-            Board
+            <Icon name="board" size={14} /> Board
           </button>
           <button className={`vsw-btn${view === "list" ? " on" : ""}`} onClick={() => setView("list")}>
-            List
+            <Icon name="list" size={14} /> List
           </button>
           <button className={`vsw-btn${view === "timeline" ? " on" : ""}`} onClick={() => setView("timeline")}>
-            Timeline
+            <Icon name="timeline" size={14} /> Timeline
           </button>
         </div>
       </div>
@@ -147,7 +148,7 @@ export default function TrackerPage({
                 <tr>
                   <td colSpan={7}>
                     <div className="empty">
-                      <div className="empty-ico">o</div>
+                      <div className="empty-ico"><Icon name="empty" size={36} strokeWidth={1.7} /></div>
                       <p>no applications found</p>
                     </div>
                   </td>
@@ -179,7 +180,7 @@ export default function TrackerPage({
                         openCover(a);
                       }}
                     >
-                      <button className="rbtn">AI Cover ↗</button>
+                      <button className="rbtn"><Icon name="spark" size={14} /> AI Cover</button>
                     </td>
                   </tr>
                 );
