@@ -1,6 +1,7 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
 import Autocomplete from "../components/shared/Autocomplete";
+import Icon from "../components/shared/Icon";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
@@ -23,17 +24,15 @@ export default function SettingsPage({
   hLoading,
   onExportCsv,
   onExportJson,
+  toast,
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
+  const fileInputRef = useRef(null);
 
-  const handleDrop = async (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-
-    const file = e.dataTransfer.files[0];
+  const processResumeFile = async (file) => {
     if (!file || file.type !== "application/pdf") {
-      alert("Please drop a valid PDF file.");
+      toast?.("Please choose a valid PDF file", "#fbbf24");
       return;
     }
 
@@ -50,12 +49,23 @@ export default function SettingsPage({
       }
 
       setResumeTxt(extractedText.trim());
+      toast?.("Resume text extracted", "#34d399");
     } catch (err) {
-      console.error(err);
-      alert("Failed to read the PDF. Make sure it's a text-based PDF, not an image scan.");
+      toast?.("Failed to read the PDF. Make sure it is a text-based PDF.", "#f87171");
     } finally {
       setIsReading(false);
     }
+  };
+
+  const handleDrop = async (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    await processResumeFile(e.dataTransfer.files[0]);
+  };
+
+  const handleFileChange = async (e) => {
+    await processResumeFile(e.target.files?.[0]);
+    e.target.value = "";
   };
 
   return (
@@ -110,6 +120,7 @@ export default function SettingsPage({
         </p>
 
         <div
+          onClick={() => fileInputRef.current?.click()}
           onDragOver={(e) => {
             e.preventDefault();
             setIsDragging(true);
@@ -129,7 +140,16 @@ export default function SettingsPage({
             transition: "all 0.2s ease",
             marginBottom: "16px",
           }}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              fileInputRef.current?.click();
+            }
+          }}
         >
+          <input ref={fileInputRef} type="file" accept="application/pdf" onChange={handleFileChange} style={{ display: "none" }} />
           {isReading ? (
             <div style={{ color: "var(--txt2)", fontSize: "14px", fontWeight: "600" }}>
               <div className="spin" style={{ margin: "0 auto 10px auto" }}></div>
@@ -137,8 +157,9 @@ export default function SettingsPage({
             </div>
           ) : (
             <div style={{ color: isDragging ? "var(--acc)" : "var(--txt3)", fontSize: "14px", fontWeight: "600" }}>
-              <span style={{ fontSize: "24px", display: "block", marginBottom: "8px" }}>[PDF]</span>
-              {isDragging ? "Drop it!" : "Drag and drop your resume PDF here"}
+              <span style={{ display: "inline-flex", marginBottom: "10px" }}><Icon name="tracker" size={26} strokeWidth={1.6} /></span>
+              <span style={{ display: "block" }}>{isDragging ? "Drop it!" : "Drag and drop your resume PDF here"}</span>
+              <span style={{ display: "block", marginTop: "6px", fontSize: "12px", color: "var(--txt3)" }}>or click to upload</span>
             </div>
           )}
         </div>

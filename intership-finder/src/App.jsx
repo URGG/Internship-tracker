@@ -18,7 +18,8 @@ const SUBS_CACHE_KEY = "subsCache";
 const normalizeApp = (app) => ({ ...BLANK, ...app, activity_log: app.activity_log || "[]" });
 
 const PanelFallback = ({ label = "Loading..." }) => (
-  <div className="scard" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220, color: "var(--txt3)" }}>
+  <div className="scard" style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center", minHeight: 220, color: "var(--txt3)" }}>
+    <div className="spin" />
     {label}
   </div>
 );
@@ -856,6 +857,7 @@ export default function App() {
                   hLoading={hLoading}
                   onExportCsv={exportJobsCsv}
                   onExportJson={exportJobsJson}
+                  toast={toast}
                 />
               </Suspense>
             )}
