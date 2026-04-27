@@ -255,7 +255,7 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     
     gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
     genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     Write a professional and concise cover letter for an internship application.
@@ -280,7 +280,7 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
     
     gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
     genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-pro')
+    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     Provide professional insights for an internship/job applicant for the company '{req.company}' and role '{req.role}'.
