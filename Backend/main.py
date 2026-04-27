@@ -14,7 +14,7 @@ from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from dotenv import load_dotenv
 import google.generativeai as genai
-
+import json
 
 load_dotenv()
 
@@ -108,6 +108,10 @@ class CoverRequest(BaseModel):
     description: str
     context: str
 
+class IntelRequest(BaseModel):
+    company: str
+    role: str
+
 app = FastAPI()
 
 app.add_middleware(
@@ -192,8 +196,6 @@ def delete_job(job_id: int, current_user: User = Depends(get_current_user), db: 
     db.commit()
     return {"message": "Deleted"}
 
-import json
-
 @app.get("/api/cities")
 def proxy_cities(q: str):
     """Proxy Teleport API to avoid CORS or network blocks in the browser"""
@@ -203,10 +205,6 @@ def proxy_cities(q: str):
         return resp.json()
     except Exception as e:
         return {"_embedded": {"city:search-results": []}}
-
-class IntelRequest(BaseModel):
-    company: str
-    role: str
 
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
@@ -282,8 +280,7 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
     
     gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
     genai.configure(api_key=gemini_key)
-    # Using flash for speed
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-pro')
     
     prompt = f"""
     Provide professional insights for an internship/job applicant for the company '{req.company}' and role '{req.role}'.
@@ -302,7 +299,6 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
     try:
         response = model.generate_content(prompt)
         content = response.text.strip()
-        # Handle cases where Gemini might still wrap in markdown
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
@@ -310,7 +306,6 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
         
         return json.loads(content)
     except Exception as e:
-        # Fallback if AI fails to return valid JSON
         return {
             "estimated_salary": "N/A",
             "culture_pros": ["Could not fetch intel"],
@@ -350,7 +345,6 @@ def run_hunter(current_user: User = Depends(get_current_user), db: Session = Dep
     if not subs:
         return {"message": "No active hunts. Add some keywords first!", "added": 0}
 
-    # Get existing links to avoid duplicates
     existing_links = {j.link for j in db.query(JobApplication).filter(JobApplication.user_id == current_user.id).all() if j.link}
     new_jobs_count = 0
 
@@ -385,4 +379,4 @@ def run_hunter(current_user: User = Depends(get_current_user), db: Session = Dep
             print(f"Hunter failed for {sub.query}: {str(e)}")
 
     db.commit()
-    return {"message": f"Hunter finished! Found {new_jobs_count} new opportunities.", "added": new_jobs_count}d": new_jobs_count}
+    return {"message": f"Hunter finished! Found {new_jobs_count} new opportunities.", "added": new_jobs_count}
