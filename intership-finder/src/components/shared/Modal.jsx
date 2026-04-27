@@ -19,6 +19,14 @@ export default function Modal({
   coverOut,
   genCover,
   openCover,
+  openResumeMatch,
+  openFollowUp,
+  matchData,
+  matchLoad,
+  runResumeMatch,
+  followUpOut,
+  followUpLoad,
+  runFollowUpDraft,
   intelData,
   intelLoad,
   fetchIntel,
@@ -48,6 +56,12 @@ export default function Modal({
                     </button>
                     <button className="ai-pill" onClick={() => openCover(form)}>
                       AI Cover
+                    </button>
+                    <button className="ai-pill" onClick={() => openResumeMatch(form)}>
+                      Resume Match
+                    </button>
+                    <button className="ai-pill" onClick={() => openFollowUp(form)}>
+                      Follow Up
                     </button>
                   </>
                 )}
@@ -335,6 +349,122 @@ export default function Modal({
               </button>
               <button className="mbtn mbtn-p" onClick={() => fetchIntel(form)}>
                 Refresh Intel
+              </button>
+            </div>
+          </>
+        )}
+
+        {modal === "match" && (
+          <>
+            <div className="mhead">
+              <h2>Resume Match</h2>
+              <button className="closex" onClick={() => setModal("edit")}>
+                x
+              </button>
+            </div>
+
+            <div className="mbody">
+              <div className="note">
+                Match your stored resume against <strong>{form.role}</strong> at <strong>{form.company}</strong>. For best results, keep the job description in the application notes.
+              </div>
+
+              {matchLoad && (
+                <div className="ai-loading">
+                  <div className="spin"></div>
+                  Scoring resume fit...
+                </div>
+              )}
+
+              {matchData && !matchLoad && (
+                <div style={{ display: "grid", gap: "16px" }}>
+                  <div className="scard" style={{ margin: 0, padding: "18px", background: "var(--s3)" }}>
+                    <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "6px", textTransform: "uppercase", letterSpacing: ".08em" }}>Match Score</div>
+                    <div style={{ fontSize: "34px", fontWeight: 800 }}>{matchData.score}%</div>
+                    <div style={{ fontSize: "12px", color: "var(--txt2)", marginTop: "8px" }}>{matchData.summary}</div>
+                  </div>
+
+                  <div className="fg2">
+                    <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>Strengths</div>
+                      <ul style={{ paddingLeft: "16px", display: "grid", gap: "8px", color: "var(--txt2)", fontSize: "13px" }}>
+                        {matchData.strengths?.map((item, index) => (
+                          <li key={index}>{item}</li>
+                        ))}
+                      </ul>
+                    </div>
+                    <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                      <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>Missing Keywords</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                        {matchData.missing_keywords?.map((item, index) => (
+                          <span key={index} className="tag t-warn">{item}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="scard" style={{ margin: 0, padding: "16px" }}>
+                    <div style={{ fontSize: "12px", color: "var(--txt3)", marginBottom: "8px" }}>Next Steps</div>
+                    <ul style={{ paddingLeft: "16px", display: "grid", gap: "8px", color: "var(--txt2)", fontSize: "13px" }}>
+                      {matchData.next_steps?.map((item, index) => (
+                        <li key={index}>{item}</li>
+                      ))}
+                    </ul>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mfoot">
+              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>
+                Back
+              </button>
+              <button className="mbtn mbtn-p" onClick={runResumeMatch} disabled={matchLoad || !resumeTxt}>
+                {matchLoad ? "Scoring..." : matchData ? "Refresh Match" : "Generate Match"}
+              </button>
+            </div>
+          </>
+        )}
+
+        {modal === "followup" && (
+          <>
+            <div className="mhead">
+              <h2>Follow-up Draft</h2>
+              <button className="closex" onClick={() => setModal("edit")}>
+                x
+              </button>
+            </div>
+
+            <div className="mbody">
+              <div className="note">
+                Draft a follow-up for <strong>{form.company}</strong> based on the current status, notes, and contact history.
+              </div>
+
+              {followUpLoad && (
+                <div className="ai-loading">
+                  <div className="spin"></div>
+                  Writing follow-up email...
+                </div>
+              )}
+
+              {followUpOut && !followUpLoad && (
+                <div className="frow">
+                  <span className="flbl" style={{ color: "var(--acc)", display: "flex", justifyContent: "space-between" }}>
+                    Draft
+                    <span style={{ cursor: "pointer", color: "var(--txt2)" }} onClick={() => navigator.clipboard.writeText(followUpOut)}>
+                      Copy
+                    </span>
+                  </span>
+                  <div className="ai-out">{followUpOut}</div>
+                </div>
+              )}
+            </div>
+
+            <div className="mfoot">
+              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>
+                Back
+              </button>
+              <button className="mbtn mbtn-p" onClick={runFollowUpDraft} disabled={followUpLoad || !resumeTxt}>
+                {followUpLoad ? "Generating..." : followUpOut ? "Refresh Draft" : "Generate Draft"}
               </button>
             </div>
           </>

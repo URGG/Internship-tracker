@@ -1,18 +1,25 @@
-import { useState, useMemo, useEffect } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import ThemeToggle from "./components/shared/ThemeToggle";
-import AnalyticsPage from "./pages/AnalyticsPage";
 import TrackerPage from "./pages/TrackerPage";
-import SearchPage from "./pages/SearchPage";
-import SettingsPage from "./pages/SettingsPage";
-import Modal from "./components/shared/Modal";
+
+const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
+const SearchPage = lazy(() => import("./pages/SearchPage"));
+const SettingsPage = lazy(() => import("./pages/SettingsPage"));
+const Modal = lazy(() => import("./components/shared/Modal"));
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://internship-tracker-1-9w2v.onrender.com/api";
 const APPS_CACHE_KEY = "appsCache";
 const SUBS_CACHE_KEY = "subsCache";
 
 const normalizeApp = (app) => ({ ...BLANK, ...app, activity_log: app.activity_log || "[]" });
+
+const PanelFallback = ({ label = "Loading..." }) => (
+  <div className="scard" style={{ display: "flex", alignItems: "center", justifyContent: "center", minHeight: 220, color: "var(--txt3)" }}>
+    {label}
+  </div>
+);
 
 const LoginModal = ({ show, setShow, setToken, toast }) => {
   const [isSignUp, setIsSignUp] = useState(false);
@@ -120,6 +127,12 @@ export default function App() {
   const [coverJob, setCoverJob] = useState("");
   const [coverOut, setCoverOut] = useState("");
   const [coverLoad, setCoverLoad] = useState(false);
+  const [matchData, setMatchData] = useState(null);
+  const [matchLoad, setMatchLoad] = useState(false);
+  const [followUpOut, setFollowUpOut] = useState("");
+  const [followUpLoad, setFollowUpLoad] = useState(false);
+  const [jobLinkUrl, setJobLinkUrl] = useState("");
+  const [jobLinkLoad, setJobLinkLoad] = useState(false);
 
   const [intelData, setIntelData] = useState(null);
   const [intelLoad, setIntelLoad] = useState(false);
@@ -431,6 +444,104 @@ export default function App() {
     setCoverLoad(false);
   };
 
+  const runResumeMatch = async () => {
+    if (!requireAuth()) return;
+    if (!resumeTxt.trim()) {
+      toast("Add your resume text in Settings first", "#fbbf24");
+      return;
+    }
+    setMatchLoad(true);
+    setMatchData(null);
+    try {
+      const res = await fetch(`${API_BASE}/resume-match`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          company: form.company,
+          role: form.role,
+          description: form.notes || "",
+          context: resumeTxt,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Resume match failed");
+      setMatchData(data);
+    } catch (e) {
+      toast(e.message, "#f87171");
+    } finally {
+      setMatchLoad(false);
+    }
+  };
+
+  const runFollowUpDraft = async () => {
+    if (!requireAuth()) return;
+    if (!resumeTxt.trim()) {
+      toast("Add your resume text in Settings first", "#fbbf24");
+      return;
+    }
+    setFollowUpLoad(true);
+    setFollowUpOut("");
+    try {
+      const res = await fetch(`${API_BASE}/generate-followup`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          company: form.company,
+          role: form.role,
+          status: form.status,
+          recruiter_name: form.recruiter_name || "",
+          last_contact_date: form.last_contact_date || "",
+          next_action_date: form.next_action_date || "",
+          notes: form.notes || "",
+          context: resumeTxt,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Follow-up draft failed");
+      setFollowUpOut(data.text);
+    } catch (e) {
+      toast(e.message, "#f87171");
+    } finally {
+      setFollowUpLoad(false);
+    }
+  };
+
+  const autofillJobLink = async () => {
+    if (!requireAuth()) return;
+    if (!jobLinkUrl.trim()) {
+      toast("Paste a job URL first", "#fbbf24");
+      return;
+    }
+    setJobLinkLoad(true);
+    try {
+      const res = await fetch(`${API_BASE}/autofill-job-link`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ url: jobLinkUrl }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Import failed");
+      setForm({
+        ...BLANK,
+        company: data.company || "",
+        role: data.role || "",
+        source: data.source || "Other",
+        location: data.location || "",
+        remote: Boolean(data.remote),
+        link: data.link || jobLinkUrl,
+        notes: data.description || "",
+        next_action_date: new Date().toISOString().slice(0, 10),
+      });
+      setEid(null);
+      setModal("edit");
+      toast("Job details imported", "#34d399");
+    } catch (e) {
+      toast(e.message, "#f87171");
+    } finally {
+      setJobLinkLoad(false);
+    }
+  };
+
   const fetchIntel = async (a) => {
     if (!requireAuth()) return;
     setIntelLoad(true);
@@ -515,6 +626,22 @@ export default function App() {
       setCoverOut("");
       setCoverJob("");
       setModal("cover");
+    }
+  };
+
+  const openResumeMatch = (a) => {
+    if (requireAuth()) {
+      setForm({ ...BLANK, ...normalizeApp(a) });
+      setMatchData(null);
+      setModal("match");
+    }
+  };
+
+  const openFollowUp = (a) => {
+    if (requireAuth()) {
+      setForm({ ...BLANK, ...normalizeApp(a) });
+      setFollowUpOut("");
+      setModal("followup");
     }
   };
 
@@ -670,75 +797,99 @@ export default function App() {
               />
             )}
             {page === "search" && (
-              <SearchPage
-                jsQ={jsQ}
-                setJsQ={setJsQ}
-                jsLoc={jsLoc}
-                setJsLoc={setJsLoc}
-                jsType={jsType}
-                setJsType={setJsType}
-                jsDate={jsDate}
-                setJsDate={setJsDate}
-                runSearch={runSearch}
-                jsLoad={jsLoad}
-                jsErr={jsErr}
-                jsRes={jsRes}
-                jsAdded={jsAdded}
-                addFromSearch={saveSearchJob}
-              />
+              <Suspense fallback={<PanelFallback label="Loading search tools..." />}>
+                <SearchPage
+                  jsQ={jsQ}
+                  setJsQ={setJsQ}
+                  jsLoc={jsLoc}
+                  setJsLoc={setJsLoc}
+                  jsType={jsType}
+                  setJsType={setJsType}
+                  jsDate={jsDate}
+                  setJsDate={setJsDate}
+                  runSearch={runSearch}
+                  jsLoad={jsLoad}
+                  jsErr={jsErr}
+                  jsRes={jsRes}
+                  jsAdded={jsAdded}
+                  addFromSearch={saveSearchJob}
+                  jobLinkUrl={jobLinkUrl}
+                  setJobLinkUrl={setJobLinkUrl}
+                  jobLinkLoad={jobLinkLoad}
+                  autofillJobLink={autofillJobLink}
+                />
+              </Suspense>
             )}
-            {page === "analytics" && <AnalyticsPage apps={apps} onExportCsv={exportJobsCsv} onExportJson={exportJobsJson} />}
+            {page === "analytics" && (
+              <Suspense fallback={<PanelFallback label="Loading analytics..." />}>
+                <AnalyticsPage apps={apps} onExportCsv={exportJobsCsv} onExportJson={exportJobsJson} />
+              </Suspense>
+            )}
             {page === "settings" && (
-              <SettingsPage
-                rKey={rKey}
-                setRKey={setRKey}
-                gKey={gKey}
-                setGKey={setGKey}
-                resumeTxt={resumeTxt}
-                setResumeTxt={setResumeTxt}
-                saveUserKeys={saveUserKeys}
-                subs={subs}
-                addHunt={addHunt}
-                delHunt={delHunt}
-                runHunter={runHunter}
-                hQ={hQ}
-                setHQ={setHQ}
-                hL={hL}
-                setHL={setHL}
-                hLoading={hLoading}
-                onExportCsv={exportJobsCsv}
-                onExportJson={exportJobsJson}
-              />
+              <Suspense fallback={<PanelFallback label="Loading settings..." />}>
+                <SettingsPage
+                  rKey={rKey}
+                  setRKey={setRKey}
+                  gKey={gKey}
+                  setGKey={setGKey}
+                  resumeTxt={resumeTxt}
+                  setResumeTxt={setResumeTxt}
+                  saveUserKeys={saveUserKeys}
+                  subs={subs}
+                  addHunt={addHunt}
+                  delHunt={delHunt}
+                  runHunter={runHunter}
+                  hQ={hQ}
+                  setHQ={setHQ}
+                  hL={hL}
+                  setHL={setHL}
+                  hLoading={hLoading}
+                  onExportCsv={exportJobsCsv}
+                  onExportJson={exportJobsJson}
+                />
+              </Suspense>
             )}
           </div>
         </div>
       </div>
 
       <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} />
-      <Modal
-        modal={modal}
-        setModal={setModal}
-        form={form}
-        setForm={setForm}
-        setF={setF}
-        eid={eid}
-        apps={apps}
-        save={save}
-        del={del}
-        coverApp={coverApp}
-        coverJob={coverJob}
-        setCoverJob={setCoverJob}
-        resumeTxt={resumeTxt}
-        setResumeTxt={setResumeTxt}
-        coverLoad={coverLoad}
-        coverOut={coverOut}
-        genCover={genCover}
-        openCover={openCover}
-        intelData={intelData}
-        intelLoad={intelLoad}
-        fetchIntel={fetchIntel}
-        toast={toast}
-      />
+      {modal && (
+        <Suspense fallback={null}>
+          <Modal
+            modal={modal}
+            setModal={setModal}
+            form={form}
+            setForm={setForm}
+            setF={setF}
+            eid={eid}
+            apps={apps}
+            save={save}
+            del={del}
+            coverApp={coverApp}
+            coverJob={coverJob}
+            setCoverJob={setCoverJob}
+            resumeTxt={resumeTxt}
+            setResumeTxt={setResumeTxt}
+            coverLoad={coverLoad}
+            coverOut={coverOut}
+            genCover={genCover}
+            openCover={openCover}
+            openResumeMatch={openResumeMatch}
+            openFollowUp={openFollowUp}
+            matchData={matchData}
+            matchLoad={matchLoad}
+            runResumeMatch={runResumeMatch}
+            followUpOut={followUpOut}
+            followUpLoad={followUpLoad}
+            runFollowUpDraft={runFollowUpDraft}
+            intelData={intelData}
+            intelLoad={intelLoad}
+            fetchIntel={fetchIntel}
+            toast={toast}
+          />
+        </Suspense>
+      )}
       <div className="toasts">
         {toasts.map((t) => (
           <div key={t.id} className="toast">

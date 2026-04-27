@@ -2,6 +2,8 @@ import os
 import requests
 from datetime import date, datetime, timedelta
 from typing import Optional, List
+import re
+from html import unescape
 from fastapi import FastAPI, HTTPException, Depends, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -133,6 +135,25 @@ class IntelRequest(BaseModel):
     company: str
     role: str
 
+class AutofillRequest(BaseModel):
+    url: str
+
+class ResumeMatchRequest(BaseModel):
+    company: str
+    role: str
+    description: str
+    context: str
+
+class FollowUpRequest(BaseModel):
+    company: str
+    role: str
+    status: str
+    recruiter_name: Optional[str] = None
+    last_contact_date: Optional[str] = None
+    next_action_date: Optional[str] = None
+    notes: Optional[str] = None
+    context: str
+
 app = FastAPI()
 
 app.add_middleware(
@@ -248,6 +269,154 @@ def find_duplicate_job(db: Session, user_id: int, payload: dict, ignore_job_id: 
             return candidate
     return None
 
+def get_user_gemini_key(current_user: User) -> str:
+    if not current_user.enc_gemini_key:
+        raise HTTPException(status_code=400, detail="Add Gemini API Key in Settings first")
+    try:
+        return cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    except InvalidToken:
+        raise HTTPException(
+            status_code=400,
+            detail="Stored Gemini API key could not be decrypted. Re-save your Gemini key in Settings."
+        )
+
+def extract_gemini_text(response) -> str:
+    text_value = getattr(response, "text", None)
+    if text_value:
+        return text_value.strip()
+
+    candidates = getattr(response, "candidates", None) or []
+    parts = []
+    for candidate in candidates:
+        content = getattr(candidate, "content", None)
+        for part in getattr(content, "parts", None) or []:
+            candidate_text = getattr(part, "text", None)
+            if candidate_text:
+                parts.append(candidate_text)
+
+    joined = "\n".join(part.strip() for part in parts if part and part.strip()).strip()
+    if joined:
+        return joined
+
+    prompt_feedback = getattr(response, "prompt_feedback", None)
+    block_reason = getattr(prompt_feedback, "block_reason", None)
+    if block_reason:
+        raise HTTPException(status_code=502, detail=f"AI response was blocked: {block_reason}")
+
+    raise HTTPException(status_code=502, detail="AI service returned an empty response")
+
+def clean_scraped_text(value: Optional[str]) -> str:
+    if not value:
+        return ""
+    value = unescape(value)
+    value = re.sub(r"<[^>]+>", " ", value)
+    value = re.sub(r"\s+", " ", value)
+    return value.strip()
+
+def extract_meta_content(html: str, name: str) -> str:
+    patterns = [
+        rf'<meta[^>]+property=["\']{re.escape(name)}["\'][^>]+content=["\']([^"\']+)["\']',
+        rf'<meta[^>]+name=["\']{re.escape(name)}["\'][^>]+content=["\']([^"\']+)["\']',
+        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']{re.escape(name)}["\']',
+        rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+name=["\']{re.escape(name)}["\']',
+    ]
+    for pattern in patterns:
+        match = re.search(pattern, html, re.IGNORECASE)
+        if match:
+            return clean_scraped_text(match.group(1))
+    return ""
+
+def infer_source_from_url(url: str) -> str:
+    lowered = url.lower()
+    if "linkedin" in lowered:
+        return "LinkedIn"
+    if "indeed" in lowered:
+        return "Indeed"
+    if "handshake" in lowered:
+        return "Handshake"
+    return "Other"
+
+def scrape_job_posting(url: str) -> dict:
+    try:
+        response = requests.get(
+            url,
+            timeout=10,
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+            },
+        )
+        response.raise_for_status()
+    except requests.RequestException as e:
+        raise HTTPException(status_code=400, detail=f"Could not fetch job page: {str(e)}")
+
+    html = response.text
+    title_match = re.search(r"<title[^>]*>(.*?)</title>", html, re.IGNORECASE | re.DOTALL)
+    title = clean_scraped_text(title_match.group(1)) if title_match else ""
+    og_title = extract_meta_content(html, "og:title")
+    description = extract_meta_content(html, "og:description") or extract_meta_content(html, "description")
+
+    json_ld_matches = re.findall(r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>', html, re.IGNORECASE | re.DOTALL)
+    company = ""
+    role = ""
+    location = ""
+    remote = False
+    for raw_block in json_ld_matches:
+        block = raw_block.strip()
+        try:
+            parsed = json.loads(block)
+        except json.JSONDecodeError:
+            continue
+        entries = parsed if isinstance(parsed, list) else [parsed]
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            role = role or clean_scraped_text(entry.get("title"))
+            hiring_org = entry.get("hiringOrganization")
+            if isinstance(hiring_org, dict):
+                company = company or clean_scraped_text(hiring_org.get("name"))
+            job_location = entry.get("jobLocation")
+            if isinstance(job_location, list) and job_location:
+                job_location = job_location[0]
+            if isinstance(job_location, dict):
+                address = job_location.get("address") or {}
+                city = clean_scraped_text(address.get("addressLocality"))
+                region = clean_scraped_text(address.get("addressRegion"))
+                location = location or ", ".join([part for part in [city, region] if part])
+            remote = remote or entry.get("jobLocationType") == "TELECOMMUTE"
+
+    merged_title = og_title or title
+    if not role and merged_title:
+        role = merged_title.split(" at ")[0].split(" | ")[0].strip()
+    if not company and merged_title and " at " in merged_title:
+        company = merged_title.split(" at ", 1)[1].split(" | ")[0].strip()
+
+    if not company:
+        company = extract_meta_content(html, "og:site_name")
+
+    lowered_blob = f"{merged_title} {description}".lower()
+    remote = remote or "remote" in lowered_blob
+
+    if not location:
+        location_patterns = [
+            r"location[:\s]+([A-Za-z .'-]+,\s?[A-Za-z]{2,})",
+            r"in\s+([A-Za-z .'-]+,\s?[A-Za-z]{2,})",
+        ]
+        for pattern in location_patterns:
+            match = re.search(pattern, clean_scraped_text(html)[:5000], re.IGNORECASE)
+            if match:
+                location = clean_scraped_text(match.group(1))
+                break
+
+    return {
+        "company": company or "Unknown Company",
+        "role": role or "Unknown Role",
+        "location": location,
+        "remote": remote,
+        "description": description or merged_title,
+        "source": infer_source_from_url(url),
+        "link": url,
+    }
+
 @app.post("/api/signup")
 def signup(user: UserAuth, db: Session = Depends(get_db)):
     if db.query(User).filter(User.username == user.username).first():
@@ -343,6 +512,13 @@ def proxy_cities(q: str):
     except Exception as e:
         return {"_embedded": {"city:search-results": []}}
 
+@app.post("/api/autofill-job-link")
+def autofill_job_link(req: AutofillRequest, current_user: User = Depends(get_current_user)):
+    url = (req.url or "").strip()
+    if not url.startswith("http"):
+        raise HTTPException(status_code=400, detail="Enter a valid job URL")
+    return scrape_job_posting(url)
+
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
     if not current_user.enc_rapid_key:
@@ -385,12 +561,85 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/resume-match")
+def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_current_user)):
+    gemini_key = get_user_gemini_key(current_user)
+    genai.configure(api_key=gemini_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    prompt = f"""
+    You are evaluating a candidate's resume against an internship posting.
+    Company: {req.company}
+    Role: {req.role}
+    Job Description: {req.description}
+    Resume Context: {req.context}
+
+    Return EXACTLY valid JSON in this shape:
+    {{
+      "score": 0,
+      "strengths": ["point 1", "point 2", "point 3"],
+      "missing_keywords": ["keyword 1", "keyword 2", "keyword 3"],
+      "summary": "two sentence summary",
+      "next_steps": ["step 1", "step 2", "step 3"]
+    }}
+
+    Score must be an integer from 0 to 100.
+    Keep it concise, concrete, and resume-focused.
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        content = extract_gemini_text(response)
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0].strip()
+        elif "```" in content:
+            content = content.split("```")[1].split("```")[0].strip()
+        parsed = json.loads(content)
+        parsed["score"] = max(0, min(100, int(parsed.get("score", 0))))
+        parsed["strengths"] = parsed.get("strengths") or []
+        parsed["missing_keywords"] = parsed.get("missing_keywords") or []
+        parsed["next_steps"] = parsed.get("next_steps") or []
+        parsed["summary"] = parsed.get("summary") or ""
+        return parsed
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+
+@app.post("/api/generate-followup")
+def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_current_user)):
+    gemini_key = get_user_gemini_key(current_user)
+    genai.configure(api_key=gemini_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+
+    prompt = f"""
+    Write a concise, professional follow-up email for a job applicant.
+    Company: {req.company}
+    Role: {req.role}
+    Current Status: {req.status}
+    Recruiter Name: {req.recruiter_name or "Hiring Team"}
+    Last Contact Date: {req.last_contact_date or "Unknown"}
+    Next Action Date: {req.next_action_date or "Not set"}
+    Notes: {req.notes or "None"}
+    Applicant Background: {req.context}
+
+    Keep it under 180 words.
+    Include a subject line on the first line in the format: Subject: ...
+    Then include the email body.
+    Make it polite, specific, and not overly formal.
+    """
+
+    try:
+        response = model.generate_content(prompt)
+        return {"text": extract_gemini_text(response)}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+
 @app.post("/api/generate-cover")
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
-    if not current_user.enc_gemini_key:
-        raise HTTPException(status_code=400, detail="Add Gemini API Key in Settings first")
-    
-    gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    gemini_key = get_user_gemini_key(current_user)
     genai.configure(api_key=gemini_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
     
@@ -406,16 +655,15 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     
     try:
         response = model.generate_content(prompt)
-        return {"text": response.text}
+        return {"text": extract_gemini_text(response)}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
 
 @app.post("/api/company-intel")
 def get_company_intel(req: IntelRequest, current_user: User = Depends(get_current_user)):
-    if not current_user.enc_gemini_key:
-        raise HTTPException(status_code=400, detail="Add Gemini API Key in Settings first")
-    
-    gemini_key = cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
+    gemini_key = get_user_gemini_key(current_user)
     genai.configure(api_key=gemini_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
     
@@ -435,13 +683,21 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
     
     try:
         response = model.generate_content(prompt)
-        content = response.text.strip()
+        content = extract_gemini_text(response)
         if "```json" in content:
             content = content.split("```json")[1].split("```")[0].strip()
         elif "```" in content:
             content = content.split("```")[1].split("```")[0].strip()
         
         return json.loads(content)
+    except HTTPException as e:
+        return {
+            "estimated_salary": "N/A",
+            "culture_pros": ["Could not fetch intel"],
+            "culture_cons": ["Please check manually"],
+            "interview_difficulty": "Unknown",
+            "recent_news": f"Error: {e.detail}"
+        }
     except Exception as e:
         return {
             "estimated_salary": "N/A",

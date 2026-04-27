@@ -6,6 +6,10 @@ import { daysBetween } from "../utils/helpers";
 export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
   const stats = useMemo(() => {
     if (!apps || apps.length === 0) return null;
+    const now = new Date();
+    const weekStart = new Date(now);
+    weekStart.setHours(0, 0, 0, 0);
+    weekStart.setDate(weekStart.getDate() - 6);
 
     const total = apps.length;
     const applied = apps.filter((a) => a.applied_date).length;
@@ -60,7 +64,31 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
     });
     const interviewStages = Object.keys(interviewStageMap).map((stage) => ({ stage, count: interviewStageMap[stage] }));
 
-    return { total, interviews, offers, responseRate, interviewRate, offerRate, avgDaysToResponse, timeline, funnel, sources, interviewStages };
+    const weekly = apps.reduce(
+      (acc, app) => {
+        const appliedDate = app.applied_date ? new Date(app.applied_date) : null;
+        const responseDate = app.last_contact_date ? new Date(app.last_contact_date) : null;
+        const nextActionDate = app.next_action_date ? new Date(app.next_action_date) : null;
+        const deadlineDate = app.deadline ? new Date(app.deadline) : null;
+
+        if (appliedDate && appliedDate >= weekStart) acc.applied += 1;
+        if (responseDate && responseDate >= weekStart) acc.responses += 1;
+        if (nextActionDate && nextActionDate >= weekStart && nextActionDate <= now && !app.follow_up_sent) acc.followUpsDue += 1;
+        if (deadlineDate && deadlineDate >= now && deadlineDate <= new Date(now.getTime() + 7 * 86400000)) acc.deadlinesSoon += 1;
+
+        if (app.source) {
+          acc.channelMomentum[app.source] = (acc.channelMomentum[app.source] || 0) + (["Phone Screen", "Interview", "Offer"].includes(app.status) ? 1 : 0);
+        }
+
+        return acc;
+      },
+      { applied: 0, responses: 0, followUpsDue: 0, deadlinesSoon: 0, channelMomentum: {} }
+    );
+
+    const strongestChannel =
+      Object.entries(weekly.channelMomentum).sort((a, b) => b[1] - a[1])[0]?.[0] || "No signal yet";
+
+    return { total, interviews, offers, responseRate, interviewRate, offerRate, avgDaysToResponse, timeline, funnel, sources, interviewStages, weekly: { ...weekly, strongestChannel } };
   }, [apps]);
 
   const COLORS = { "To Do": "#787774", Applied: "#5b7fff", "Phone Screen": "#38bdf8", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
@@ -101,6 +129,29 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
             <div style={{ fontSize: "32px", fontWeight: "700", color }}>{value}</div>
           </div>
         ))}
+      </div>
+
+      <div className="scard" style={{ marginBottom: "24px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", flexWrap: "wrap", marginBottom: "18px" }}>
+          <div>
+            <h3 style={{ marginBottom: "6px" }}>Weekly Review</h3>
+            <div style={{ color: "var(--txt3)", fontSize: "12px" }}>A practical snapshot of the last 7 days and what needs attention next</div>
+          </div>
+          <div className="tag t-ot">Best channel: {stats.weekly.strongestChannel}</div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "12px" }}>
+          {[
+            ["Applied this week", stats.weekly.applied],
+            ["Responses this week", stats.weekly.responses],
+            ["Follow-ups due", stats.weekly.followUpsDue],
+            ["Deadlines in 7 days", stats.weekly.deadlinesSoon],
+          ].map(([label, value]) => (
+            <div key={label} style={{ background: "var(--s2)", border: "1px solid var(--b0)", borderRadius: "var(--r)", padding: "16px" }}>
+              <div style={{ color: "var(--txt3)", fontSize: "11px", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: "8px" }}>{label}</div>
+              <div style={{ fontSize: "28px", fontWeight: 700 }}>{value}</div>
+            </div>
+          ))}
+        </div>
       </div>
 
       <div className="scard" style={{ marginBottom: "24px" }}>

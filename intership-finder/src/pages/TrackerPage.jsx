@@ -1,5 +1,5 @@
 import { SOURCES, KCOLS, SD, SP } from "../utils/constants";
-import { fmt, daysUntil, isFollowUpDue, srcTag } from "../utils/helpers";
+import { fmt, daysUntil, isFollowUpDue, parseActivityLog, srcTag } from "../utils/helpers";
 import Card from "../components/shared/Card";
 
 export default function TrackerPage({
@@ -92,6 +92,9 @@ export default function TrackerPage({
           <button className={`vsw-btn${view === "list" ? " on" : ""}`} onClick={() => setView("list")}>
             List
           </button>
+          <button className={`vsw-btn${view === "timeline" ? " on" : ""}`} onClick={() => setView("timeline")}>
+            Timeline
+          </button>
         </div>
       </div>
 
@@ -125,7 +128,7 @@ export default function TrackerPage({
             );
           })}
         </div>
-      ) : (
+      ) : view === "list" ? (
         <div className="ltbl-wrap">
           <table className="ltbl">
             <thead>
@@ -183,6 +186,61 @@ export default function TrackerPage({
               })}
             </tbody>
           </table>
+        </div>
+      ) : (
+        <div className="scard" style={{ margin: 0 }}>
+          <h3 style={{ marginBottom: "14px" }}>Application Timeline</h3>
+          <div style={{ display: "grid", gap: "12px" }}>
+            {filtered.length === 0 && <div className="note">No applications match this view yet.</div>}
+            {filtered
+              .slice()
+              .sort((a, b) => {
+                const aDate = parseActivityLog(a.activity_log).slice(-1)[0]?.timestamp || a.applied_date || "";
+                const bDate = parseActivityLog(b.activity_log).slice(-1)[0]?.timestamp || b.applied_date || "";
+                return bDate.localeCompare(aDate);
+              })
+              .map((app) => {
+                const events = parseActivityLog(app.activity_log).slice().reverse();
+                return (
+                  <button
+                    key={app.id}
+                    onClick={() => openEdit(app)}
+                    style={{
+                      textAlign: "left",
+                      background: "var(--s2)",
+                      border: "1px solid var(--b0)",
+                      borderRadius: "var(--r)",
+                      padding: "16px",
+                      color: "var(--txt)",
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: "12px", alignItems: "center", marginBottom: "10px", flexWrap: "wrap" }}>
+                      <div>
+                        <div style={{ fontWeight: 700, fontSize: "14px" }}>{app.company}</div>
+                        <div style={{ color: "var(--txt2)", fontSize: "12px", marginTop: "3px" }}>{app.role}</div>
+                      </div>
+                      <span className={`spill ${SP[app.status] || "sw"}`}>{app.status}</span>
+                    </div>
+                    <div style={{ display: "grid", gap: "10px" }}>
+                      {events.length === 0 ? (
+                        <div className="note" style={{ marginTop: 0 }}>No timeline events yet.</div>
+                      ) : (
+                        events.map((event, index) => (
+                          <div key={`${event.timestamp}-${index}`} style={{ display: "grid", gridTemplateColumns: "12px 1fr", gap: "10px", alignItems: "start" }}>
+                            <div style={{ width: "10px", height: "10px", borderRadius: "50%", background: "var(--txt)", marginTop: "4px" }} />
+                            <div>
+                              <div style={{ fontSize: "12px", color: "var(--txt2)" }}>{event.message}</div>
+                              <div style={{ fontSize: "10px", color: "var(--txt3)", marginTop: "3px" }}>{event.timestamp}</div>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+          </div>
         </div>
       )}
     </>
