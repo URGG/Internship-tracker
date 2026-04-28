@@ -1,21 +1,136 @@
 # intern.track
 
-Private internship and job application tracker with:
-- pipeline tracking and kanban/list/timeline views
-- reminders, follow-up dates, and activity history
-- CSV/JSON export
-- optional live search, auto-hunter, and AI helpers using user-provided keys
+`intern.track` is a private internship and job application tracker built for students and early-career candidates who want a cleaner way to manage the application process.
 
-## Structure
+It keeps saved jobs, applications, deadlines, follow-ups, interview progress, and exports in one place. The core tracker works on its own, and optional AI and search features can be enabled with user-provided keys.
+
+## Overview
+
+This project is split into two parts:
 
 - `intership-finder/`
-  Frontend Vite + React app
+  React + Vite frontend
 - `Backend/`
   FastAPI backend with SQLAlchemy persistence
 
-## Local development
+The product is designed around a free core experience:
+
+- track applications in board, list, and timeline views
+- manage deadlines and follow-up dates
+- review pipeline progress and weekly activity
+- export data to CSV or JSON
+
+Optional extras include:
+
+- live job search
+- job link autofill
+- auto-hunter subscriptions
+- AI cover letters
+- resume matching
+- follow-up drafting
+- company intel
+
+## What It Does
+
+### Application tracking
+
+- Create and manage internship or full-time applications
+- Move jobs across stages such as `To Do`, `Applied`, `Phone Screen`, `Interview`, `Offer`, and `Rejected`
+- View the pipeline as a kanban board, table, or timeline
+
+### Workflow management
+
+- Track deadlines and next action dates
+- Store recruiter names, recruiter emails, referrals, notes, and interview stages
+- Keep a simple activity log for status changes and updates
+
+### Search and lead capture
+
+- Search live job listings through an optional RapidAPI-backed flow
+- Save search results as leads
+- Import job details from a posting URL
+- Run auto-hunter subscriptions for recurring searches
+
+### Analytics and review
+
+- See response, interview, and offer rates
+- Review source performance
+- Track recent activity through weekly review metrics
+- Export data whenever needed
+
+### Optional AI tools
+
+- Generate cover letter drafts
+- Draft recruiter follow-ups
+- Compare resume text against a job description
+- Generate company research summaries
+
+## Screenshots
+
+Add screenshots to `docs/images/` and replace the placeholders below.
+
+### Tracker
+
+`[Tracker screenshot placeholder]`
+
+Example:
+
+```md
+![Tracker](docs/images/tracker.png)
+```
+
+### Search
+
+`[Search screenshot placeholder]`
+
+Example:
+
+```md
+![Search](docs/images/search.png)
+```
+
+### Analytics
+
+`[Analytics screenshot placeholder]`
+
+Example:
+
+```md
+![Analytics](docs/images/analytics.png)
+```
+
+### Pricing
+
+`[Pricing screenshot placeholder]`
+
+Example:
+
+```md
+![Pricing](docs/images/pricing.png)
+```
+
+## Tech Stack
 
 Frontend:
+
+- React
+- Vite
+- Recharts
+- pdfjs-dist
+
+Backend:
+
+- FastAPI
+- SQLAlchemy
+- bcrypt
+- PyJWT
+- cryptography
+- requests
+- google-generativeai
+
+## Local Development
+
+### Frontend
 
 ```bash
 cd intership-finder
@@ -23,7 +138,7 @@ npm install
 npm run dev
 ```
 
-Backend:
+### Backend
 
 ```bash
 cd Backend
@@ -33,28 +148,45 @@ uvicorn main:app --reload
 
 ## Environment
 
-Backend expects:
+### Backend
+
+Required:
 
 - `JWT_SECRET`
 - `ENCRYPTION_KEY`
-- `DATABASE_URL` (optional, falls back to local SQLite)
 
-Frontend optionally supports:
+Optional:
+
+- `DATABASE_URL`
+
+If `DATABASE_URL` is not set, the backend falls back to a local SQLite database.
+
+### Frontend
+
+Optional:
 
 - `VITE_API_BASE_URL`
 
-If `VITE_API_BASE_URL` is not set, the frontend uses the production backend URL configured in `src/config.js`.
+If `VITE_API_BASE_URL` is not set, the frontend uses the production backend URL configured in `intership-finder/src/config.js`.
 
-## Optional keys
+## Optional API Keys
 
-The core tracker works without external API keys.
+The tracker itself does not require external API keys.
 
-Optional features use user-provided keys:
+Optional paid integrations use user-provided keys:
 
 - `RapidAPI`
-  Live job search and auto-hunter
+  Used for live job search and auto-hunter
 - `Gemini`
-  Cover letters, resume match, follow-up drafts, and company intel
+  Used for cover letters, resume match, follow-up drafts, and company intel
+
+This makes the main product usable without forcing every user through external API setup.
+
+## Repository Notes
+
+- This project is proprietary and not open source.
+- The current repo contains the production frontend and backend code used for the tracker.
+- Legacy unused frontend files and template assets have been removed as part of cleanup.
 
 ## License
 
