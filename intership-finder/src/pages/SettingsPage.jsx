@@ -50,7 +50,7 @@ export default function SettingsPage({
 
       setResumeTxt(extractedText.trim());
       toast?.("Resume text extracted", "#34d399");
-    } catch (err) {
+    } catch {
       toast?.("Failed to read the PDF. Make sure it is a text-based PDF.", "#f87171");
     } finally {
       setIsReading(false);

@@ -1,14 +1,33 @@
 import { SD } from "../../utils/constants";
-import { fmt, daysUntil, isFollowUpDue, srcTag } from "../../utils/helpers";
+import { fmt, daysUntil, externalHref, isFollowUpDue, srcTag } from "../../utils/helpers";
+import Icon from "./Icon";
 
 export default function Card({ app, setDragId, openEdit }) {
   const deadlineDays = daysUntil(app.deadline);
   const nextActionDays = daysUntil(app.next_action_date);
+  const postingHref = externalHref(app.link);
 
   return (
     <div className="jcard" draggable onDragStart={() => setDragId(app.id)} onClick={() => openEdit(app)}>
       <div className={`jcard-stripe ${SD[app.status] || "d-W"}`} />
-      <div className="jcard-co">{app.company}</div>
+      <div className="jcard-top">
+        <div className="jcard-co">{app.company}</div>
+        {postingHref && (
+          <a
+            className="jcard-link"
+            href={postingHref}
+            target="_blank"
+            rel="noreferrer"
+            title="Open application link"
+            aria-label={`Open application link for ${app.company}`}
+            draggable={false}
+            onClick={(e) => e.stopPropagation()}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <Icon name="external" size={14} />
+          </a>
+        )}
+      </div>
       <div className="jcard-role">
         {app.role}
         {app.location ? ` | ${app.location}` : ""}

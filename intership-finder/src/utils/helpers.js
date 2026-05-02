@@ -46,3 +46,9 @@ export function detectSource(url) {
   if (/handshake/i.test(url)) return "Handshake";
   return "Other";
 }
+
+export function externalHref(url) {
+  const trimmed = String(url || "").trim();
+  if (!trimmed) return "";
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
