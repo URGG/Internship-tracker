@@ -15,8 +15,19 @@ import bcrypt
 from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from dotenv import load_dotenv
-import google.generativeai as genai
 import json
+
+try:
+    from google import genai as google_genai
+    from google.genai import types as google_genai_types
+except ImportError:
+    google_genai = None
+    google_genai_types = None
+
+try:
+    import google.generativeai as legacy_genai
+except ImportError:
+    legacy_genai = None
 
 load_dotenv()
 
@@ -29,6 +40,7 @@ if not JWT_SECRET or not ENCRYPTION_KEY:
 
 cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -281,9 +293,12 @@ def get_user_gemini_key(current_user: User) -> str:
         )
 
 def extract_gemini_text(response) -> str:
-    text_value = getattr(response, "text", None)
-    if text_value:
-        return text_value.strip()
+    try:
+        text_value = getattr(response, "text", None)
+        if text_value:
+            return text_value.strip()
+    except Exception:
+        pass
 
     candidates = getattr(response, "candidates", None) or []
     parts = []
@@ -304,6 +319,93 @@ def extract_gemini_text(response) -> str:
         raise HTTPException(status_code=502, detail=f"AI response was blocked: {block_reason}")
 
     raise HTTPException(status_code=502, detail="AI service returned an empty response")
+
+def normalize_ai_error(error: Exception) -> HTTPException:
+    message = str(error)
+    lowered = message.lower()
+    if "api_key_invalid" in lowered or "api key not valid" in lowered or "invalid api key" in lowered:
+        return HTTPException(status_code=400, detail="Gemini API key is invalid. Re-save a valid key in Settings.")
+    if "quota" in lowered or "rate limit" in lowered or "429" in lowered:
+        return HTTPException(status_code=429, detail="Gemini quota or rate limit was reached. Try again later or check your Gemini account.")
+    if "not found" in lowered and "model" in lowered:
+        return HTTPException(status_code=502, detail=f"Gemini model '{GEMINI_MODEL}' is not available for this API key.")
+    return HTTPException(status_code=502, detail=f"Gemini request failed: {message}")
+
+def generate_gemini_content(api_key: str, prompt: str, schema: Optional[dict] = None, temperature: float = 0.4) -> str:
+    if google_genai and google_genai_types:
+        try:
+            client = google_genai.Client(api_key=api_key)
+            config_kwargs = {"temperature": temperature}
+            if schema:
+                config_kwargs["response_mime_type"] = "application/json"
+                config_kwargs["response_json_schema"] = schema
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+                config=google_genai_types.GenerateContentConfig(**config_kwargs),
+            )
+            return extract_gemini_text(response)
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise normalize_ai_error(e)
+
+    if not legacy_genai:
+        raise HTTPException(status_code=500, detail="Gemini SDK is not installed on the backend")
+
+    try:
+        legacy_genai.configure(api_key=api_key)
+        generation_config = {"temperature": temperature}
+        if schema:
+            generation_config["response_mime_type"] = "application/json"
+            generation_config["response_schema"] = schema
+        model = legacy_genai.GenerativeModel(GEMINI_MODEL)
+        response = model.generate_content(prompt, generation_config=generation_config)
+        return extract_gemini_text(response)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise normalize_ai_error(e)
+
+def extract_json_object(raw: str) -> dict:
+    content = (raw or "").strip()
+    if "```json" in content:
+        content = content.split("```json", 1)[1].split("```", 1)[0].strip()
+    elif "```" in content:
+        content = content.split("```", 1)[1].split("```", 1)[0].strip()
+
+    try:
+        return json.loads(content)
+    except json.JSONDecodeError:
+        start = content.find("{")
+        end = content.rfind("}")
+        if start != -1 and end != -1 and end > start:
+            return json.loads(content[start:end + 1])
+        raise
+
+RESUME_MATCH_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "score": {"type": "integer"},
+        "strengths": {"type": "array", "items": {"type": "string"}},
+        "missing_keywords": {"type": "array", "items": {"type": "string"}},
+        "summary": {"type": "string"},
+        "next_steps": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["score", "strengths", "missing_keywords", "summary", "next_steps"],
+}
+
+COMPANY_INTEL_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "estimated_salary": {"type": "string"},
+        "culture_pros": {"type": "array", "items": {"type": "string"}},
+        "culture_cons": {"type": "array", "items": {"type": "string"}},
+        "interview_difficulty": {"type": "string"},
+        "recent_news": {"type": "string"},
+    },
+    "required": ["estimated_salary", "culture_pros", "culture_cons", "interview_difficulty", "recent_news"],
+}
 
 def clean_scraped_text(value: Optional[str]) -> str:
     if not value:
@@ -564,8 +666,6 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
 @app.post("/api/resume-match")
 def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_current_user)):
     gemini_key = get_user_gemini_key(current_user)
-    genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
     You are evaluating a candidate's resume against an internship posting.
@@ -588,13 +688,8 @@ def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_curre
     """
 
     try:
-        response = model.generate_content(prompt)
-        content = extract_gemini_text(response)
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        parsed = json.loads(content)
+        content = generate_gemini_content(gemini_key, prompt, RESUME_MATCH_SCHEMA, temperature=0.2)
+        parsed = extract_json_object(content)
         parsed["score"] = max(0, min(100, int(parsed.get("score", 0))))
         parsed["strengths"] = parsed.get("strengths") or []
         parsed["missing_keywords"] = parsed.get("missing_keywords") or []
@@ -609,8 +704,6 @@ def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_curre
 @app.post("/api/generate-followup")
 def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_current_user)):
     gemini_key = get_user_gemini_key(current_user)
-    genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
 
     prompt = f"""
     Write a concise, professional follow-up email for a job applicant.
@@ -630,8 +723,7 @@ def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_cur
     """
 
     try:
-        response = model.generate_content(prompt)
-        return {"text": extract_gemini_text(response)}
+        return {"text": generate_gemini_content(gemini_key, prompt)}
     except HTTPException:
         raise
     except Exception as e:
@@ -640,8 +732,6 @@ def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_cur
 @app.post("/api/generate-cover")
 def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
     gemini_key = get_user_gemini_key(current_user)
-    genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     Write a professional and concise cover letter for an internship application.
@@ -654,8 +744,7 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     """
     
     try:
-        response = model.generate_content(prompt)
-        return {"text": extract_gemini_text(response)}
+        return {"text": generate_gemini_content(gemini_key, prompt)}
     except HTTPException:
         raise
     except Exception as e:
@@ -664,8 +753,6 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
 @app.post("/api/company-intel")
 def get_company_intel(req: IntelRequest, current_user: User = Depends(get_current_user)):
     gemini_key = get_user_gemini_key(current_user)
-    genai.configure(api_key=gemini_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
     Provide professional insights for an internship/job applicant for the company '{req.company}' and role '{req.role}'.
@@ -682,30 +769,18 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
     """
     
     try:
-        response = model.generate_content(prompt)
-        content = extract_gemini_text(response)
-        if "```json" in content:
-            content = content.split("```json")[1].split("```")[0].strip()
-        elif "```" in content:
-            content = content.split("```")[1].split("```")[0].strip()
-        
-        return json.loads(content)
-    except HTTPException as e:
-        return {
-            "estimated_salary": "N/A",
-            "culture_pros": ["Could not fetch intel"],
-            "culture_cons": ["Please check manually"],
-            "interview_difficulty": "Unknown",
-            "recent_news": f"Error: {e.detail}"
-        }
+        content = generate_gemini_content(gemini_key, prompt, COMPANY_INTEL_SCHEMA, temperature=0.3)
+        parsed = extract_json_object(content)
+        parsed["estimated_salary"] = parsed.get("estimated_salary") or "N/A"
+        parsed["culture_pros"] = parsed.get("culture_pros") or []
+        parsed["culture_cons"] = parsed.get("culture_cons") or []
+        parsed["interview_difficulty"] = parsed.get("interview_difficulty") or "Unknown"
+        parsed["recent_news"] = parsed.get("recent_news") or ""
+        return parsed
+    except HTTPException:
+        raise
     except Exception as e:
-        return {
-            "estimated_salary": "N/A",
-            "culture_pros": ["Could not fetch intel"],
-            "culture_cons": ["Please check manually"],
-            "interview_difficulty": "Unknown",
-            "recent_news": f"Error: {str(e)}"
-        }
+        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
 
 @app.get("/api/subscriptions")
 def get_subs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
