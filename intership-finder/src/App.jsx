@@ -4,6 +4,7 @@ import { uid } from "./utils/helpers";
 import { API_BASE } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
+import LandingPage from "./pages/LandingPage";
 import TrackerPage from "./pages/TrackerPage";
 
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
@@ -24,11 +25,15 @@ const PanelFallback = ({ label = "Loading..." }) => (
   </div>
 );
 
-const LoginModal = ({ show, setShow, setToken, toast }) => {
+const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [user, setUser] = useState("");
   const [pass, setPass] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (show) setIsSignUp(authIntent === "signup");
+  }, [show, authIntent]);
 
   if (!show) return null;
 
@@ -89,7 +94,7 @@ const LoginModal = ({ show, setShow, setToken, toast }) => {
             <input className="finp" type="password" value={pass} onChange={(e) => setPass(e.target.value)} required placeholder="********" />
           </div>
           <button className="mbtn mbtn-p" type="submit" disabled={loading} style={{ marginTop: 12, height: 40 }}>
-            {loading ? "Processing..." : isSignUp ? "Sign Up ↗" : "Log In ↗"}
+            {loading ? "Processing..." : isSignUp ? "Sign Up" : "Log In"}
           </button>
         </form>
 
@@ -107,6 +112,7 @@ const LoginModal = ({ show, setShow, setToken, toast }) => {
 export default function App() {
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
   const [showLogin, setShowLogin] = useState(false);
+  const [authIntent, setAuthIntent] = useState("login");
   const [apps, setApps] = useState(() => {
     try {
       const cached = localStorage.getItem(APPS_CACHE_KEY);
@@ -116,7 +122,7 @@ export default function App() {
     }
   });
   const [view, setView] = useState("board");
-  const [page, setPage] = useState("tracker");
+  const [page, setPage] = useState(() => (localStorage.getItem("token") ? "tracker" : "landing"));
   const [srcF, setSrcF] = useState("all");
   const [stF, setStF] = useState("all");
   const [q, setQ] = useState("");
@@ -172,6 +178,11 @@ export default function App() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
   };
 
+  const openAuth = (intent = "login") => {
+    setAuthIntent(intent);
+    setShowLogin(true);
+  };
+
   useEffect(() => {
     localStorage.setItem("resumeTxt", resumeTxt);
   }, [resumeTxt]);
@@ -214,7 +225,7 @@ export default function App() {
   const requireAuth = () => {
     if (!token) {
       toast("Please log in to use this feature", "#fbbf24");
-      setShowLogin(true);
+      openAuth("login");
       return false;
     }
     return true;
@@ -243,6 +254,10 @@ export default function App() {
       });
   }, [token]);
 
+  useEffect(() => {
+    if (token && page === "landing") setPage("tracker");
+  }, [token, page]);
+
   const isDuplicate = (job, ignoreId = null) =>
     apps.some((app) => {
       if (ignoreId && app.id === ignoreId) return false;
@@ -256,7 +271,7 @@ export default function App() {
     setToken(null);
     setApps([]);
     setSubs([]);
-    setPage("tracker");
+    setPage("landing");
     toast("Logged out securely", "#8b91b8");
   };
 
@@ -698,6 +713,23 @@ export default function App() {
     { id: "settings", icon: "settings", label: "Settings", count: null },
   ];
 
+  if (page === "landing" && !token) {
+    return (
+      <>
+        <LandingPage onStart={() => openAuth("signup")} onLogin={() => openAuth("login")} onOpenApp={() => setPage("tracker")} />
+        <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} />
+        <div className="toasts">
+          {toasts.map((t) => (
+            <div key={t.id} className="toast">
+              <div className="tdot" style={{ background: t.color }} />
+              {t.msg}
+            </div>
+          ))}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <div className="shell">
@@ -738,7 +770,7 @@ export default function App() {
 
           <div style={{ marginTop: "auto" }}>
             {!token ? (
-              <button className="sb-btn" onClick={() => setShowLogin(true)} style={{ color: "var(--acc)", fontWeight: 700 }}>
+              <button className="sb-btn" onClick={() => openAuth("login")} style={{ color: "var(--acc)", fontWeight: 700 }}>
                 <span className="sb-icon"><Icon name="login" size={16} /></span>Sign In
               </button>
             ) : (
@@ -759,7 +791,7 @@ export default function App() {
             </div>
 
             {!token ? (
-              <button className="tbtn tbtn-p" onClick={() => setShowLogin(true)} style={{ marginLeft: "auto" }}>
+              <button className="tbtn tbtn-p" onClick={() => openAuth("login")} style={{ marginLeft: "auto" }}>
                 Sign In / Sign Up
               </button>
             ) : (
@@ -865,7 +897,7 @@ export default function App() {
         </div>
       </div>
 
-      <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} />
+      <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} />
       {modal && (
         <Suspense fallback={null}>
           <Modal
