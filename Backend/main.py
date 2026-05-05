@@ -4,7 +4,7 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List
 import re
 from html import unescape
-from fastapi import FastAPI, HTTPException, Depends, Query
+from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
@@ -16,6 +16,11 @@ from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from dotenv import load_dotenv
 import json
+
+try:
+    import stripe
+except ImportError:
+    stripe = None
 
 try:
     from google import genai as google_genai
@@ -41,6 +46,14 @@ if not JWT_SECRET or not ENCRYPTION_KEY:
 cipher_suite = Fernet(ENCRYPTION_KEY.encode())
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
+STRIPE_PRO_MONTHLY_PRICE_ID = os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID")
+STRIPE_LIFETIME_PRICE_ID = os.getenv("STRIPE_LIFETIME_PRICE_ID")
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+
+if stripe and STRIPE_SECRET_KEY:
+    stripe.api_key = STRIPE_SECRET_KEY
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -65,6 +78,11 @@ class User(Base):
     hashed_password = Column(String)
     enc_rapid_key = Column(String, nullable=True)
     enc_gemini_key = Column(String, nullable=True)
+    stripe_customer_id = Column(String, nullable=True)
+    stripe_subscription_id = Column(String, nullable=True)
+    plan = Column(String, default="free")
+    subscription_status = Column(String, default="free")
+    current_period_end = Column(String, nullable=True)
 
 class JobApplication(Base):
     __tablename__ = "applications"
@@ -114,6 +132,9 @@ class SubscriptionCreate(BaseModel):
     query: str
     location: str
     job_type: str
+
+class CheckoutRequest(BaseModel):
+    plan: str
 
 class JobCreate(BaseModel):
     company: str
@@ -206,8 +227,29 @@ def ensure_job_application_columns():
                 continue
             connection.execute(text(f"ALTER TABLE applications ADD COLUMN {column_name} {column_type}"))
 
+def ensure_user_columns():
+    inspector = inspect(engine)
+    existing_columns = {column["name"] for column in inspector.get_columns("users")} if inspector.has_table("users") else set()
+    additions = {
+        "stripe_customer_id": "VARCHAR",
+        "stripe_subscription_id": "VARCHAR",
+        "plan": "VARCHAR DEFAULT 'free'",
+        "subscription_status": "VARCHAR DEFAULT 'free'",
+        "current_period_end": "VARCHAR",
+    }
+
+    if not existing_columns:
+        return
+
+    with engine.begin() as connection:
+        for column_name, column_type in additions.items():
+            if column_name in existing_columns:
+                continue
+            connection.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}"))
+
 Base.metadata.create_all(bind=engine)
 ensure_job_application_columns()
+ensure_user_columns()
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
@@ -220,6 +262,66 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     user = db.query(User).filter(User.username == username).first()
     if user is None: raise HTTPException(status_code=401, detail="User not found")
     return user
+
+def require_stripe():
+    if stripe is None:
+        raise HTTPException(status_code=500, detail="Stripe dependency is not installed")
+    if not STRIPE_SECRET_KEY:
+        raise HTTPException(status_code=500, detail="Stripe secret key is not configured")
+
+def get_checkout_plan(plan: str):
+    plans = {
+        "pro_monthly": {
+            "price_id": STRIPE_PRO_MONTHLY_PRICE_ID,
+            "mode": "subscription",
+            "app_plan": "pro",
+        },
+        "lifetime": {
+            "price_id": STRIPE_LIFETIME_PRICE_ID,
+            "mode": "payment",
+            "app_plan": "lifetime",
+        },
+    }
+    checkout_plan = plans.get(plan)
+    if not checkout_plan:
+        raise HTTPException(status_code=400, detail="Unknown checkout plan")
+    if not checkout_plan["price_id"]:
+        raise HTTPException(status_code=500, detail=f"Stripe price ID is not configured for {plan}")
+    return checkout_plan
+
+def stripe_object_to_dict(value):
+    if hasattr(value, "to_dict_recursive"):
+        return value.to_dict_recursive()
+    return value
+
+def format_stripe_timestamp(value):
+    if not value:
+        return None
+    return datetime.utcfromtimestamp(value).isoformat(timespec="seconds") + "Z"
+
+def sync_user_subscription_from_stripe(user: User, subscription):
+    data = stripe_object_to_dict(subscription)
+    user.stripe_subscription_id = data.get("id")
+    user.subscription_status = data.get("status") or "unknown"
+    user.current_period_end = format_stripe_timestamp(data.get("current_period_end"))
+    if user.subscription_status in {"active", "trialing"}:
+        user.plan = "pro"
+
+def find_user_for_stripe_event(db: Session, event_object):
+    data = stripe_object_to_dict(event_object)
+    user_id = data.get("client_reference_id") or (data.get("metadata") or {}).get("user_id")
+    if user_id:
+        try:
+            user = db.query(User).filter(User.id == int(user_id)).first()
+            if user:
+                return user
+        except (TypeError, ValueError):
+            pass
+
+    customer_id = data.get("customer")
+    if customer_id:
+        return db.query(User).filter(User.stripe_customer_id == customer_id).first()
+    return None
 
 def load_activity_log(value: Optional[str]):
     if not value:
@@ -545,6 +647,92 @@ def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user)
         current_user.enc_gemini_key = cipher_suite.encrypt(keys.gemini_key.encode()).decode()
     db.commit()
     return {"message": "Keys secured"}
+
+@app.get("/api/billing/me")
+def get_billing_status(current_user: User = Depends(get_current_user)):
+    return {
+        "plan": current_user.plan or "free",
+        "subscription_status": current_user.subscription_status or "free",
+        "current_period_end": current_user.current_period_end,
+    }
+
+@app.post("/api/billing/create-checkout-session")
+def create_checkout_session(req: CheckoutRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_stripe()
+    checkout_plan = get_checkout_plan(req.plan)
+
+    try:
+        if not current_user.stripe_customer_id:
+            customer = stripe.Customer.create(
+                name=current_user.username,
+                metadata={"user_id": str(current_user.id), "username": current_user.username},
+            )
+            current_user.stripe_customer_id = customer.id
+            db.commit()
+
+        session_params = {
+            "customer": current_user.stripe_customer_id,
+            "client_reference_id": str(current_user.id),
+            "mode": checkout_plan["mode"],
+            "line_items": [{"price": checkout_plan["price_id"], "quantity": 1}],
+            "allow_promotion_codes": True,
+            "success_url": f"{FRONTEND_URL}/?checkout=success&plan={req.plan}",
+            "cancel_url": f"{FRONTEND_URL}/?checkout=cancelled",
+            "metadata": {"user_id": str(current_user.id), "plan": checkout_plan["app_plan"]},
+        }
+        if checkout_plan["mode"] == "subscription":
+            session_params["subscription_data"] = {"metadata": {"user_id": str(current_user.id), "plan": checkout_plan["app_plan"]}}
+        else:
+            session_params["payment_intent_data"] = {"metadata": {"user_id": str(current_user.id), "plan": checkout_plan["app_plan"]}}
+
+        session = stripe.checkout.Session.create(**session_params)
+        return {"url": session.url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Stripe checkout failed: {str(e)}")
+
+@app.post("/api/billing/webhook")
+async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
+    require_stripe()
+    if not STRIPE_WEBHOOK_SECRET:
+        raise HTTPException(status_code=500, detail="Stripe webhook secret is not configured")
+
+    payload = await request.body()
+    signature = request.headers.get("stripe-signature")
+
+    try:
+        event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid Stripe payload")
+    except stripe.error.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid Stripe signature")
+
+    event_type = event["type"]
+    event_object = event["data"]["object"]
+    event_data = stripe_object_to_dict(event_object)
+
+    if event_type in {"checkout.session.completed", "checkout.session.async_payment_succeeded"}:
+        user = find_user_for_stripe_event(db, event_object)
+        if user:
+            user.stripe_customer_id = event_data.get("customer") or user.stripe_customer_id
+            if event_data.get("mode") == "payment" and (event_type == "checkout.session.async_payment_succeeded" or event_data.get("payment_status") == "paid"):
+                user.plan = (event_data.get("metadata") or {}).get("plan") or "lifetime"
+                user.subscription_status = "active"
+                user.stripe_subscription_id = None
+                user.current_period_end = None
+            elif event_data.get("mode") == "subscription" and event_data.get("subscription"):
+                subscription = stripe.Subscription.retrieve(event_data["subscription"])
+                sync_user_subscription_from_stripe(user, subscription)
+            db.commit()
+
+    if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+        user = find_user_for_stripe_event(db, event_object)
+        if user:
+            sync_user_subscription_from_stripe(user, event_object)
+            if user.subscription_status in {"canceled", "unpaid", "incomplete_expired"}:
+                user.plan = "free"
+            db.commit()
+
+    return {"received": True}
 
 @app.get("/api/jobs")
 def get_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

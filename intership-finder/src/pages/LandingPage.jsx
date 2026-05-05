@@ -19,7 +19,31 @@ const features = [
   ["spark", "Optional AI drafts", "Generate cover letters, follow-ups, resume matches, and company notes."],
 ];
 
-export default function LandingPage({ onStart, onLogin, onOpenApp }) {
+const pricingPlans = [
+  {
+    name: "Free",
+    price: "$0",
+    detail: "Applications, pipeline views, reminders, analytics, and exports.",
+    action: "Create account",
+    id: "free",
+  },
+  {
+    name: "Pro",
+    price: "$9/mo",
+    detail: "Built-in AI and search convenience without managing your own keys.",
+    action: "Choose monthly",
+    id: "pro_monthly",
+  },
+  {
+    name: "Lifetime",
+    price: "$129",
+    detail: "One payment for permanent access to the premium tracker version.",
+    action: "Own forever",
+    id: "lifetime",
+  },
+];
+
+export default function LandingPage({ onStart, onLogin, onOpenApp, onCheckout, checkoutLoading }) {
   return (
     <main className="landing">
       <header className="landing-nav">
@@ -131,13 +155,22 @@ export default function LandingPage({ onStart, onLogin, onOpenApp }) {
           <h2>Start free. Upgrade only if convenience is worth it.</h2>
           <p>The tracker, analytics, reminders, and exports stay free. Paid plans are for built-in AI and search without managing your own keys.</p>
         </div>
-        <div className="landing-price-card">
-          <span>Free core</span>
-          <strong>$0</strong>
-          <p>Applications, pipeline views, reminders, analytics, and exports.</p>
-          <button className="landing-primary" onClick={onStart}>
-            <Icon name="plus" size={16} /> Create account
-          </button>
+        <div className="landing-price-grid">
+          {pricingPlans.map((plan) => (
+            <div className="landing-price-card" key={plan.id}>
+              <span>{plan.name}</span>
+              <strong>{plan.price}</strong>
+              <p>{plan.detail}</p>
+              <button
+                className="landing-primary"
+                onClick={plan.id === "free" ? onStart : () => onCheckout(plan.id)}
+                disabled={checkoutLoading === plan.id}
+              >
+                <Icon name={plan.id === "free" ? "plus" : "pricing"} size={16} />
+                {checkoutLoading === plan.id ? "Opening Checkout..." : plan.action}
+              </button>
+            </div>
+          ))}
         </div>
       </section>
     </main>

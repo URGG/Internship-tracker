@@ -158,8 +158,15 @@ Required:
 Optional:
 
 - `DATABASE_URL`
+- `FRONTEND_URL`
+- `STRIPE_SECRET_KEY`
+- `STRIPE_WEBHOOK_SECRET`
+- `STRIPE_PRO_MONTHLY_PRICE_ID`
+- `STRIPE_LIFETIME_PRICE_ID`
 
 If `DATABASE_URL` is not set, the backend falls back to a local SQLite database.
+
+Stripe Checkout uses Dashboard-managed payment methods. In Stripe, create one recurring monthly Price and one one-time lifetime Price, put those Price IDs in the backend environment, then enable the payment methods you want in the Stripe Dashboard payment method settings. Do not add the Stripe secret key to the frontend.
 
 ### Frontend
 

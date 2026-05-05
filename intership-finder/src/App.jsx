@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { uid } from "./utils/helpers";
 import { API_BASE } from "./config";
@@ -160,6 +160,8 @@ export default function App() {
   const [jsAdded, setJsAdded] = useState(new Set());
 
   const [toasts, setToasts] = useState([]);
+  const [checkoutLoading, setCheckoutLoading] = useState(null);
+  const [pendingCheckoutPlan, setPendingCheckoutPlan] = useState(null);
   const [subs, setSubs] = useState(() => {
     try {
       const cached = localStorage.getItem(SUBS_CACHE_KEY);
@@ -172,16 +174,25 @@ export default function App() {
   const [hL, setHL] = useState("");
   const [hLoading, setHLoading] = useState(false);
 
-  const toast = (msg, color = "#34d399") => {
+  const toast = useCallback((msg, color = "#34d399") => {
     const id = uid();
     setToasts((t) => [...t, { id, msg, color }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3000);
-  };
+  }, []);
 
-  const openAuth = (intent = "login") => {
+  const openAuth = useCallback((intent = "login") => {
     setAuthIntent(intent);
     setShowLogin(true);
-  };
+  }, []);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const checkout = params.get("checkout");
+    if (!checkout) return;
+
+    toast(checkout === "success" ? "Payment confirmed. Your plan will update shortly." : "Checkout cancelled", checkout === "success" ? "#34d399" : "#fbbf24");
+    window.history.replaceState({}, "", window.location.pathname);
+  }, [toast]);
 
   useEffect(() => {
     localStorage.setItem("resumeTxt", resumeTxt);
@@ -252,7 +263,7 @@ export default function App() {
       .catch(() => {
         toast("Using cached jobs while the backend wakes up", "#fbbf24");
       });
-  }, [token]);
+  }, [token, toast]);
 
   useEffect(() => {
     if (token && page === "landing") setPage("tracker");
@@ -345,6 +356,41 @@ export default function App() {
       toast(e.message, "#f87171");
     }
   };
+
+  const startCheckout = useCallback(async (planId) => {
+    if (planId === "free") {
+      toast("You are on the free tracker plan", "#8b91b8");
+      return;
+    }
+    if (!token) {
+      setPendingCheckoutPlan(planId);
+      toast("Create an account or sign in to continue to Checkout", "#fbbf24");
+      openAuth("signup");
+      return;
+    }
+
+    setCheckoutLoading(planId);
+    try {
+      const res = await fetch(`${API_BASE}/billing/create-checkout-session`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ plan: planId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Unable to start checkout");
+      window.location.assign(data.url);
+    } catch (e) {
+      toast(e.message, "#f87171");
+      setCheckoutLoading(null);
+    }
+  }, [openAuth, toast, token]);
+
+  useEffect(() => {
+    if (!token || !pendingCheckoutPlan) return;
+    const planId = pendingCheckoutPlan;
+    setPendingCheckoutPlan(null);
+    startCheckout(planId);
+  }, [token, pendingCheckoutPlan, startCheckout]);
 
   const save = async () => {
     if (!requireAuth() || !form.company.trim() || !form.role.trim()) return;
@@ -716,7 +762,7 @@ export default function App() {
   if (page === "landing" && !token) {
     return (
       <>
-        <LandingPage onStart={() => openAuth("signup")} onLogin={() => openAuth("login")} onOpenApp={() => setPage("tracker")} />
+        <LandingPage onStart={() => openAuth("signup")} onLogin={() => openAuth("login")} onOpenApp={() => setPage("tracker")} onCheckout={startCheckout} checkoutLoading={checkoutLoading} />
         <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} />
         <div className="toasts">
           {toasts.map((t) => (
@@ -865,7 +911,7 @@ export default function App() {
             )}
             {page === "pricing" && (
               <Suspense fallback={<PanelFallback label="Loading pricing..." />}>
-                <PricingPage />
+                <PricingPage startCheckout={startCheckout} checkoutLoading={checkoutLoading} />
               </Suspense>
             )}
             {page === "settings" && (

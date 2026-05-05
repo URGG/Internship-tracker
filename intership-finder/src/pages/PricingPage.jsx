@@ -5,6 +5,7 @@ const tiers = {
   monthly: [
     {
       name: "Free",
+      id: "free",
       price: "$0",
       cadence: "/forever",
       badge: "Best for starting",
@@ -19,6 +20,7 @@ const tiers = {
     },
     {
       name: "Pro",
+      id: "pro_monthly",
       price: "$9",
       cadence: "/month",
       badge: "Simple recurring plan",
@@ -34,6 +36,7 @@ const tiers = {
     },
     {
       name: "Lifetime",
+      id: "lifetime",
       price: "$129",
       cadence: "one-time",
       badge: "Own it forever",
@@ -50,6 +53,7 @@ const tiers = {
   lifetime: [
     {
       name: "Free",
+      id: "free",
       price: "$0",
       cadence: "/forever",
       badge: "Best for starting",
@@ -64,6 +68,7 @@ const tiers = {
     },
     {
       name: "Pro",
+      id: "pro_monthly",
       price: "$9",
       cadence: "/month",
       badge: "Lower upfront cost",
@@ -79,6 +84,7 @@ const tiers = {
     },
     {
       name: "Lifetime",
+      id: "lifetime",
       price: "$129",
       cadence: "one-time",
       badge: "Recommended ownership plan",
@@ -95,7 +101,7 @@ const tiers = {
   ],
 };
 
-export default function PricingPage() {
+export default function PricingPage({ startCheckout, checkoutLoading }) {
   const [mode, setMode] = useState("monthly");
 
   const plans = useMemo(() => tiers[mode], [mode]);
@@ -184,8 +190,13 @@ export default function PricingPage() {
               ))}
             </div>
 
-            <button className={plan.highlight ? "mbtn mbtn-p" : "mbtn"} style={{ width: "100%" }}>
-              {plan.cta}
+            <button
+              className={plan.highlight ? "mbtn mbtn-p" : "mbtn"}
+              style={{ width: "100%" }}
+              onClick={() => startCheckout(plan.id)}
+              disabled={checkoutLoading === plan.id}
+            >
+              {checkoutLoading === plan.id ? "Opening Checkout..." : plan.cta}
             </button>
           </div>
         ))}
