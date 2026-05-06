@@ -207,6 +207,16 @@ export default function App() {
     setShowLogin(true);
   }, []);
 
+  const clearAuthSession = useCallback(() => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("username");
+    localStorage.removeItem(APPS_CACHE_KEY);
+    localStorage.removeItem(SUBS_CACHE_KEY);
+    setToken(null);
+    setApps([]);
+    setSubs([]);
+  }, []);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const checkout = params.get("checkout");
@@ -274,18 +284,23 @@ export default function App() {
     }
 
     const headers = { Authorization: `Bearer ${token}` };
-    Promise.all([
-      fetch(`${API_BASE}/jobs`, { headers }).then((res) => res.json()),
-      fetch(`${API_BASE}/subscriptions`, { headers }).then((res) => res.json()),
-    ])
-      .then(([jobsData, subsData]) => {
+    Promise.all([fetch(`${API_BASE}/jobs`, { headers }), fetch(`${API_BASE}/subscriptions`, { headers })])
+      .then(async ([jobsRes, subsRes]) => {
+        if (jobsRes.status === 401 || subsRes.status === 401) {
+          clearAuthSession();
+          toast("Session expired. Please log in again.", "#fbbf24");
+          openAuth("login");
+          return;
+        }
+
+        const [jobsData, subsData] = await Promise.all([jobsRes.json(), subsRes.json()]);
         if (Array.isArray(jobsData)) setApps(jobsData.map(normalizeApp));
         if (Array.isArray(subsData)) setSubs(subsData);
       })
       .catch(() => {
         toast("Using cached jobs while the backend wakes up", "#fbbf24");
       });
-  }, [token, toast]);
+  }, [clearAuthSession, openAuth, token, toast]);
 
   useEffect(() => {
     if (token && page === "landing") setPage("tracker");
@@ -299,11 +314,7 @@ export default function App() {
     });
 
   const handleLogout = () => {
-    localStorage.removeItem("token");
-    localStorage.removeItem("username");
-    setToken(null);
-    setApps([]);
-    setSubs([]);
+    clearAuthSession();
     setPage("landing");
     toast("Logged out securely", "#8b91b8");
   };
@@ -399,13 +410,21 @@ export default function App() {
         body: JSON.stringify({ plan: planId }),
       });
       const data = await res.json();
+      if (res.status === 401) {
+        clearAuthSession();
+        setPendingCheckoutPlan(planId);
+        toast("Session expired. Please log in again to continue to Checkout.", "#fbbf24");
+        openAuth("login");
+        return;
+      }
       if (!res.ok) throw new Error(data.detail || "Unable to start checkout");
       window.location.assign(data.url);
     } catch (e) {
       toast(e.message, "#f87171");
+    } finally {
       setCheckoutLoading(null);
     }
-  }, [openAuth, toast, token]);
+  }, [clearAuthSession, openAuth, toast, token]);
 
   useEffect(() => {
     if (!token || !pendingCheckoutPlan) return;
