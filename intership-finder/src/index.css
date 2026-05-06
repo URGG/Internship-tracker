@@ -729,6 +729,67 @@ a {
     margin-left: auto
 }
 
+.jcard-health {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    margin-top: 10px
+}
+
+.health-meter {
+    height: 5px;
+    overflow: hidden;
+    border-radius: 999px;
+    background: var(--b0)
+}
+
+.health-meter span {
+    display: block;
+    height: 100%;
+    border-radius: inherit
+}
+
+.health-label {
+    font-size: 10px;
+    font-family: var(--mono);
+    font-weight: 700;
+    white-space: nowrap
+}
+
+.h-good {
+    color: var(--grn);
+    background: var(--grn)
+}
+
+.h-mid {
+    color: var(--amb);
+    background: var(--amb)
+}
+
+.h-low {
+    color: var(--red);
+    background: var(--red)
+}
+
+.health-label.h-good,
+.health-label.h-mid,
+.health-label.h-low,
+.health-scoreline strong.h-good,
+.health-scoreline strong.h-mid,
+.health-scoreline strong.h-low {
+    background: none
+}
+
+.queue-tags {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+    flex-wrap: wrap;
+    flex: 0 0 auto
+}
+
 
 /* STATUS COLORS */
 
@@ -1359,6 +1420,91 @@ a {
     overflow-y: auto
 }
 
+.opportunity-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, .72fr);
+    gap: 12px;
+    padding: 16px;
+    border: 1px solid var(--b0);
+    border-radius: var(--r);
+    background: var(--s2)
+}
+
+.health-scoreline {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 8px 0 10px;
+    flex-wrap: wrap
+}
+
+.health-scoreline strong {
+    font-size: 28px;
+    line-height: 1;
+    font-family: var(--mono)
+}
+
+.health-scoreline span {
+    color: var(--txt2);
+    font-size: 13px;
+    font-weight: 700
+}
+
+.health-scoreline em {
+    color: var(--txt3);
+    font-size: 11px;
+    font-family: var(--mono);
+    font-style: normal
+}
+
+.health-meter-lg {
+    height: 7px
+}
+
+.health-gaps {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px
+}
+
+.prep-list {
+    display: grid;
+    gap: 7px;
+    margin-top: 8px
+}
+
+.prep-list div {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--txt2);
+    font-size: 12px
+}
+
+.prep-list span {
+    width: 28px;
+    height: 20px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: var(--s3);
+    color: var(--txt3);
+    font-size: 10px;
+    font-family: var(--mono);
+    flex: 0 0 auto
+}
+
+.prep-list .done {
+    color: var(--txt)
+}
+
+.prep-list .done span {
+    background: rgba(52, 211, 153, .14);
+    color: var(--grn)
+}
+
 .ai-loading {
     display: flex;
     align-items: center;
@@ -1978,5 +2124,12 @@ code {
     }
     .landing-features article {
         min-height: 0
+    }
+    .jcard-health,
+    .opportunity-panel {
+        grid-template-columns: 1fr
+    }
+    .queue-tags {
+        justify-content: flex-start
     }
 }

@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
 import { BLANK } from "./utils/constants";
-import { uid } from "./utils/helpers";
+import { getActionSignal, uid } from "./utils/helpers";
 import { API_BASE } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
@@ -701,6 +701,16 @@ export default function App() {
     [apps]
   );
 
+  const smartQueue = useMemo(
+    () =>
+      apps
+        .map((app) => ({ app, signal: getActionSignal(app) }))
+        .filter((item) => item.signal.score > 0)
+        .sort((a, b) => b.signal.score - a.signal.score)
+        .slice(0, 8),
+    [apps]
+  );
+
   const stats = useMemo(
     () => ({
       total: apps.length,
@@ -755,10 +765,10 @@ export default function App() {
     }
   };
 
-  const onDrop = async (status) => {
-    if (!requireAuth() || dragId == null) return;
-    const movingJobId = dragId;
-    const targetJob = apps.find((x) => x.id === movingJobId);
+  const onDrop = async (status, droppedId = "") => {
+    const movingJobId = droppedId || dragId;
+    if (!requireAuth() || movingJobId == null || movingJobId === "") return;
+    const targetJob = apps.find((x) => String(x.id) === String(movingJobId));
     if (!targetJob) return;
 
     const previousJob = normalizeApp(targetJob);
@@ -769,7 +779,7 @@ export default function App() {
     };
     const payload = jobPayload(nextPayload);
 
-    setApps((a) => a.map((x) => (x.id === movingJobId ? normalizeApp(payload) : x)));
+    setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? normalizeApp(payload) : x)));
     setDragId(null);
     setDragOver(null);
     toast(`Moved to ${status}`, "#5b7fff");
@@ -782,9 +792,9 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to sync drag with database");
-      setApps((a) => a.map((x) => (x.id === movingJobId ? normalizeApp(data) : x)));
+      setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? normalizeApp(data) : x)));
     } catch (e) {
-      setApps((a) => a.map((x) => (x.id === movingJobId ? previousJob : x)));
+      setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? previousJob : x)));
       toast(e.message || "Failed to sync drag with database", "#f87171");
     }
   };
@@ -928,6 +938,7 @@ export default function App() {
                 openCover={openCover}
                 setDragId={setDragId}
                 reminders={reminders}
+                smartQueue={smartQueue}
               />
             )}
             {page === "search" && (

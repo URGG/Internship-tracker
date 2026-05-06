@@ -1,6 +1,6 @@
 import React from "react";
 import { INTERVIEW_STAGES, STATUSES } from "../../utils/constants";
-import { parseActivityLog } from "../../utils/helpers";
+import { daysSince, getApplicationHealth, parseActivityLog } from "../../utils/helpers";
 import Icon from "./Icon";
 
 export default function Modal({
@@ -36,6 +36,15 @@ export default function Modal({
   if (!modal) return null;
 
   const history = parseActivityLog(form.activity_log);
+  const health = getApplicationHealth(form);
+  const appliedAge = daysSince(form.applied_date);
+  const prepItems = [
+    ["Stage clear", form.status !== "Interview" || form.interview_stage],
+    ["Contact mapped", form.recruiter_name || form.recruiter_email || form.referral_name],
+    ["Resume version tagged", form.resume_version],
+    ["Next action scheduled", form.next_action_date],
+    ["Notes are useful", form.notes && form.notes.trim().length > 20],
+  ];
 
   const handleCopy = () => {
     navigator.clipboard.writeText(coverOut);
@@ -104,6 +113,38 @@ export default function Modal({
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+
+              <div className="opportunity-panel">
+                <div>
+                  <span className="flbl">Application Health</span>
+                  <div className="health-scoreline">
+                    <strong className={health.cls}>{health.score}%</strong>
+                    <span>{health.label}</span>
+                    {appliedAge !== null && <em>{appliedAge} days tracked</em>}
+                  </div>
+                  <div className="health-meter health-meter-lg" aria-hidden="true">
+                    <span className={health.cls} style={{ width: `${health.score}%` }} />
+                  </div>
+                  {health.gaps.length > 0 && (
+                    <div className="health-gaps">
+                      {health.gaps.slice(0, 4).map((gap) => (
+                        <span key={gap} className="tag t-ot">{gap}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span className="flbl">Prep Pack</span>
+                  <div className="prep-list">
+                    {prepItems.map(([label, done]) => (
+                      <div key={label} className={done ? "done" : ""}>
+                        <span>{done ? "ok" : "-"}</span>
+                        {label}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 

@@ -1,14 +1,29 @@
 import { SD } from "../../utils/constants";
-import { fmt, daysUntil, externalHref, isFollowUpDue, srcTag } from "../../utils/helpers";
+import { fmt, daysUntil, externalHref, getActionSignal, getApplicationHealth, isFollowUpDue, srcTag } from "../../utils/helpers";
 import Icon from "./Icon";
 
-export default function Card({ app, setDragId, openEdit }) {
+export default function Card({ app, setDragId, setDragOver, openEdit }) {
   const deadlineDays = daysUntil(app.deadline);
   const nextActionDays = daysUntil(app.next_action_date);
   const postingHref = externalHref(app.link);
+  const health = getApplicationHealth(app);
+  const signal = getActionSignal(app);
 
   return (
-    <div className="jcard" draggable onDragStart={() => setDragId(app.id)} onClick={() => openEdit(app)}>
+    <div
+      className="jcard"
+      draggable
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", String(app.id));
+        setDragId(app.id);
+      }}
+      onDragEnd={() => {
+        setDragId(null);
+        setDragOver(null);
+      }}
+      onClick={() => openEdit(app)}
+    >
       <div className={`jcard-stripe ${SD[app.status] || "d-W"}`} />
       <div className="jcard-top">
         <div className="jcard-co">{app.company}</div>
@@ -43,6 +58,13 @@ export default function Card({ app, setDragId, openEdit }) {
         {!isFollowUpDue(app) && nextActionDays !== null && nextActionDays <= 2 && !app.follow_up_sent && <span className="tag t-soon">next {fmt(app.next_action_date)}</span>}
         {app.resume_version && <span className="tag t-ot">resume {app.resume_version}</span>}
         {app.applied_date && <span className="jcard-date">{fmt(app.applied_date)}</span>}
+      </div>
+      <div className="jcard-health">
+        <div className="health-meter" aria-hidden="true">
+          <span className={health.cls} style={{ width: `${health.score}%` }} />
+        </div>
+        <span className={`health-label ${health.cls}`}>{health.score}% {health.label}</span>
+        {signal.score > 0 && <span className={`tag ${signal.cls}`}>{signal.label}</span>}
       </div>
     </div>
   );

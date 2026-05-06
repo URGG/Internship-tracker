@@ -1,7 +1,25 @@
 import { SOURCES, KCOLS, SD, SP } from "../utils/constants";
-import { fmt, daysUntil, isFollowUpDue, parseActivityLog, srcTag } from "../utils/helpers";
+import { fmt, daysUntil, getApplicationHealth, isFollowUpDue, parseActivityLog, srcTag } from "../utils/helpers";
 import Card from "../components/shared/Card";
 import Icon from "../components/shared/Icon";
+
+const autoScrollDuringDrag = (event) => {
+  const edge = 80;
+  const speed = 18;
+  const content = event.currentTarget.closest(".content");
+  const viewportHeight = window.innerHeight;
+  const viewportWidth = window.innerWidth;
+  let top = 0;
+  let left = 0;
+
+  if (event.clientY < edge) top = -speed;
+  if (event.clientY > viewportHeight - edge) top = speed;
+  if (event.clientX < edge) left = -speed;
+  if (event.clientX > viewportWidth - edge) left = speed;
+
+  if (top && content) content.scrollBy({ top });
+  if (left) window.scrollBy({ left });
+};
 
 export default function TrackerPage({
   stats,
@@ -17,7 +35,19 @@ export default function TrackerPage({
   openCover,
   setDragId,
   reminders,
+  smartQueue = [],
 }) {
+  const queueItems = smartQueue.length
+    ? smartQueue
+    : reminders.map((app) => ({
+        app,
+        signal: {
+          label: isFollowUpDue(app) ? "Follow up" : "Deadline",
+          detail: isFollowUpDue(app) ? `Action was due ${fmt(app.next_action_date)}` : `Deadline ${fmt(app.deadline)}`,
+          cls: isFollowUpDue(app) ? "t-warn" : "t-soon",
+        },
+      }));
+
   return (
     <>
       <div className="stats">
@@ -36,13 +66,12 @@ export default function TrackerPage({
         ))}
       </div>
 
-      {reminders.length > 0 && (
+      {queueItems.length > 0 && (
         <div className="scard" style={{ marginBottom: "20px" }}>
-          <h3 style={{ marginBottom: "14px" }}>Action Queue</h3>
+          <h3 style={{ marginBottom: "14px" }}>Smart Queue</h3>
           <div style={{ display: "grid", gap: "10px" }}>
-            {reminders.slice(0, 6).map((app) => {
-              const followUp = isFollowUpDue(app);
-              const deadlineDays = daysUntil(app.deadline);
+            {queueItems.slice(0, 6).map(({ app, signal }) => {
+              const health = getApplicationHealth(app);
               return (
                 <button
                   key={app.id}
@@ -65,13 +94,14 @@ export default function TrackerPage({
                     <div style={{ fontWeight: 700, fontSize: "13px" }}>{app.company}</div>
                     <div style={{ color: "var(--txt2)", fontSize: "12px", marginTop: "3px" }}>{app.role}</div>
                     <div style={{ color: "var(--txt3)", fontSize: "11px", marginTop: "5px" }}>
-                      {followUp ? `Follow up by ${fmt(app.next_action_date)}` : `Deadline on ${fmt(app.deadline)}`}
+                      {signal.detail}
                       {app.recruiter_name ? ` | ${app.recruiter_name}` : ""}
                     </div>
                   </div>
-                  <span className={`tag ${followUp || (deadlineDays !== null && deadlineDays <= 1) ? "t-warn" : "t-soon"}`}>
-                    {followUp ? "follow up" : "deadline"}
-                  </span>
+                  <div className="queue-tags">
+                    <span className={`tag ${signal.cls}`}>{signal.label}</span>
+                    <span className={`health-label ${health.cls}`}>{health.score}%</span>
+                  </div>
                 </button>
               );
             })}
@@ -100,7 +130,7 @@ export default function TrackerPage({
       </div>
 
       {view === "board" ? (
-        <div className="kanban">
+        <div className="kanban" onDragOver={autoScrollDuringDrag}>
           {KCOLS.map((col) => {
             const ca = filtered.filter((a) => a.status === col);
             return (
@@ -109,10 +139,16 @@ export default function TrackerPage({
                 className={`kcol${dragOver === col ? " drag-over" : ""}`}
                 onDragOver={(e) => {
                   e.preventDefault();
+                  e.dataTransfer.dropEffect = "move";
+                  autoScrollDuringDrag(e);
                   setDragOver(col);
                 }}
                 onDragLeave={() => setDragOver(null)}
-                onDrop={() => onDrop(col)}
+                onDrop={(e) => {
+                  e.preventDefault();
+                  const droppedId = e.dataTransfer.getData("text/plain");
+                  onDrop(col, droppedId);
+                }}
               >
                 <div className="khead">
                   <div className={`kdot ${SD[col]}`} />
@@ -122,7 +158,7 @@ export default function TrackerPage({
                 <div className="kcards">
                   {ca.length === 0 && <div className="kdrop">drop here</div>}
                   {ca.map((a) => (
-                    <Card key={a.id} app={a} setDragId={setDragId} openEdit={openEdit} />
+                    <Card key={a.id} app={a} setDragId={setDragId} setDragOver={setDragOver} openEdit={openEdit} />
                   ))}
                 </div>
               </div>
