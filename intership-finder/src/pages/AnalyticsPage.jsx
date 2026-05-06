@@ -13,9 +13,9 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
 
     const total = apps.length;
     const applied = apps.filter((a) => a.applied_date).length;
-    const interviews = apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length;
+    const interviews = apps.filter((a) => a.status === "Interview").length;
     const offers = apps.filter((a) => a.status === "Offer").length;
-    const responded = apps.filter((a) => a.last_contact_date || ["Phone Screen", "Interview", "Offer", "Rejected"].includes(a.status)).length;
+    const responded = apps.filter((a) => a.last_contact_date || ["Interview", "Offer", "Rejected"].includes(a.status)).length;
     const interviewRate = applied > 0 ? ((interviews / applied) * 100).toFixed(1) : "0.0";
     const responseRate = applied > 0 ? ((responded / applied) * 100).toFixed(1) : "0.0";
     const offerRate = applied > 0 ? ((offers / applied) * 100).toFixed(1) : "0.0";
@@ -34,7 +34,7 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
       .sort((a, b) => new Date(a) - new Date(b))
       .map((date) => ({ date, applications: dateMap[date] }));
 
-    const funnelMap = { "To Do": 0, Applied: 0, "Phone Screen": 0, Interview: 0, Offer: 0, Rejected: 0 };
+    const funnelMap = { "To Do": 0, Applied: 0, Interview: 0, Offer: 0, Rejected: 0 };
     apps.forEach((app) => {
       if (funnelMap[app.status] !== undefined) funnelMap[app.status] += 1;
     });
@@ -45,7 +45,7 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
       const source = app.source || "Other";
       if (!sourceMap[source]) sourceMap[source] = { source, total: 0, interviews: 0, offers: 0 };
       sourceMap[source].total += 1;
-      if (["Phone Screen", "Interview"].includes(app.status)) sourceMap[source].interviews += 1;
+      if (app.status === "Interview") sourceMap[source].interviews += 1;
       if (app.status === "Offer") sourceMap[source].offers += 1;
     });
     const sources = Object.values(sourceMap)
@@ -77,7 +77,7 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
         if (deadlineDate && deadlineDate >= now && deadlineDate <= new Date(now.getTime() + 7 * 86400000)) acc.deadlinesSoon += 1;
 
         if (app.source) {
-          acc.channelMomentum[app.source] = (acc.channelMomentum[app.source] || 0) + (["Phone Screen", "Interview", "Offer"].includes(app.status) ? 1 : 0);
+          acc.channelMomentum[app.source] = (acc.channelMomentum[app.source] || 0) + (["Interview", "Offer"].includes(app.status) ? 1 : 0);
         }
 
         return acc;
@@ -91,7 +91,7 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
     return { total, interviews, offers, responseRate, interviewRate, offerRate, avgDaysToResponse, timeline, funnel, sources, interviewStages, weekly: { ...weekly, strongestChannel } };
   }, [apps]);
 
-  const COLORS = { "To Do": "#787774", Applied: "#5b7fff", "Phone Screen": "#38bdf8", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
+  const COLORS = { "To Do": "#787774", Applied: "#5b7fff", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
   const SOURCE_COLORS = ["#5b7fff", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#38bdf8"];
 
   if (!stats) {

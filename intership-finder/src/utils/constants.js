@@ -1,7 +1,7 @@
-export const STATUSES = ["To Do", "Applied", "Phone Screen", "Interview", "Offer", "Rejected"];
+export const STATUSES = ["To Do", "Applied", "Interview", "Offer", "Rejected"];
 export const KCOLS = [...STATUSES];
 export const SOURCES = ["LinkedIn", "Indeed", "Handshake", "Search", "Auto-Hunter", "Other"];
-export const INTERVIEW_STAGES = ["", "Online Assessment", "Recruiter Screen", "Phone Screen", "Technical", "Behavioral", "Final Round", "Take Home"];
+export const INTERVIEW_STAGES = ["", "Online Assessment", "Recruiter Screen", "Technical", "Behavioral", "Final Round", "Take Home"];
 
 export const JOB_TYPES = [
   { v: "", l: "Any type" },
@@ -19,8 +19,8 @@ export const DATE_OPTS = [
   { v: "month", l: "Past month" },
 ];
 
-export const SP = { "To Do": "sw", Applied: "sa", "Phone Screen": "sp", Interview: "si", Offer: "so", Rejected: "sr" };
-export const SD = { "To Do": "d-W", Applied: "d-A", "Phone Screen": "d-P", Interview: "d-I", Offer: "d-O", Rejected: "d-R" };
+export const SP = { "To Do": "sw", Applied: "sa", Interview: "si", Offer: "so", Rejected: "sr" };
+export const SD = { "To Do": "d-W", Applied: "d-A", Interview: "d-I", Offer: "d-O", Rejected: "d-R" };
 export const ST = { LinkedIn: "t-li", Indeed: "t-in", Handshake: "t-hs", Search: "t-ot", "Auto-Hunter": "t-ot", Other: "t-ot" };
 
 export const BLANK = {

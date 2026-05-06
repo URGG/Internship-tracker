@@ -117,8 +117,10 @@ class SearchSubscription(Base):
     location = Column(String)
     job_type = Column(String, default="INTERN")
 
-VALID_STATUSES = {"To Do", "Applied", "Phone Screen", "Interview", "Offer", "Rejected"}
-VALID_INTERVIEW_STAGES = {"", "Online Assessment", "Recruiter Screen", "Phone Screen", "Technical", "Behavioral", "Final Round", "Take Home"}
+VALID_STATUSES = {"To Do", "Applied", "Interview", "Offer", "Rejected"}
+VALID_INTERVIEW_STAGES = {"", "Online Assessment", "Recruiter Screen", "Technical", "Behavioral", "Final Round", "Take Home"}
+STATUS_ALIASES = {"Phone Screen": "Interview"}
+INTERVIEW_STAGE_ALIASES = {"Phone Screen": "Recruiter Screen"}
 
 class UserAuth(BaseModel):
     username: str
@@ -247,9 +249,25 @@ def ensure_user_columns():
                 continue
             connection.execute(text(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}"))
 
+def migrate_removed_phone_screen_stage():
+    inspector = inspect(engine)
+    if not inspector.has_table("applications"):
+        return
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("UPDATE applications SET status = :new_status WHERE status = :old_status"),
+            {"new_status": "Interview", "old_status": "Phone Screen"},
+        )
+        connection.execute(
+            text("UPDATE applications SET interview_stage = :new_stage WHERE interview_stage = :old_stage"),
+            {"new_stage": "Recruiter Screen", "old_stage": "Phone Screen"},
+        )
+
 Base.metadata.create_all(bind=engine)
 ensure_job_application_columns()
 ensure_user_columns()
+migrate_removed_phone_screen_stage()
 
 def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(get_db)):
     try:
@@ -347,6 +365,8 @@ def normalize_job_payload(job: JobCreate):
     payload["status"] = payload["status"].strip()
     payload["source"] = (payload["source"] or "Other").strip() or "Other"
     payload["interview_stage"] = (payload["interview_stage"] or "").strip()
+    payload["status"] = STATUS_ALIASES.get(payload["status"], payload["status"])
+    payload["interview_stage"] = INTERVIEW_STAGE_ALIASES.get(payload["interview_stage"], payload["interview_stage"])
 
     if payload["status"] not in VALID_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid application status")

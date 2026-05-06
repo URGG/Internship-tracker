@@ -17,6 +17,8 @@ const APPS_CACHE_KEY = "appsCache";
 const SUBS_CACHE_KEY = "subsCache";
 
 const normalizeBool = (value) => value === true || value === "true" || value === 1;
+const normalizeStatus = (status) => (status === "Phone Screen" ? "Interview" : status);
+const normalizeInterviewStage = (stage) => (stage === "Phone Screen" ? "Recruiter Screen" : stage);
 
 const normalizeApp = (app = {}) => {
   const normalized = { ...BLANK, ...app };
@@ -27,6 +29,8 @@ const normalizeApp = (app = {}) => {
 
   normalized.remote = normalizeBool(normalized.remote);
   normalized.follow_up_sent = normalizeBool(normalized.follow_up_sent);
+  normalized.status = normalizeStatus(normalized.status);
+  normalized.interview_stage = normalizeInterviewStage(normalized.interview_stage);
   normalized.activity_log =
     typeof normalized.activity_log === "string"
       ? normalized.activity_log || "[]"
@@ -138,7 +142,8 @@ export default function App() {
   const [apps, setApps] = useState(() => {
     try {
       const cached = localStorage.getItem(APPS_CACHE_KEY);
-      return cached ? JSON.parse(cached) : [];
+      const parsed = cached ? JSON.parse(cached) : [];
+      return Array.isArray(parsed) ? parsed.map(normalizeApp) : [];
     } catch {
       return [];
     }
@@ -700,7 +705,7 @@ export default function App() {
     () => ({
       total: apps.length,
       applied: apps.filter((a) => a.status !== "To Do").length,
-      ivw: apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length,
+      ivw: apps.filter((a) => a.status === "Interview").length,
       offers: apps.filter((a) => a.status === "Offer").length,
       reminders: reminders.length,
     }),
@@ -799,7 +804,7 @@ export default function App() {
     { id: "analytics", icon: "analytics", label: "Analytics", count: null },
     { id: "pricing", icon: "pricing", label: "Pricing", count: null },
     { id: "wishlist", icon: "todo", label: "To Do", count: apps.filter((a) => a.status === "To Do").length },
-    { id: "ivw", icon: "interview", label: "Interviews", count: apps.filter((a) => ["Phone Screen", "Interview"].includes(a.status)).length },
+    { id: "ivw", icon: "interview", label: "Interviews", count: apps.filter((a) => a.status === "Interview").length },
     { id: "offers", icon: "offer", label: "Offers", count: apps.filter((a) => a.status === "Offer").length },
     { id: "settings", icon: "settings", label: "Settings", count: null },
   ];

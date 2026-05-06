@@ -35,7 +35,7 @@ Optional extras include:
 ### Application tracking
 
 - Create and manage internship or full-time applications
-- Move jobs across stages such as `To Do`, `Applied`, `Phone Screen`, `Interview`, `Offer`, and `Rejected`
+- Move jobs across stages such as `To Do`, `Applied`, `Interview`, `Offer`, and `Rejected`
 - View the pipeline as a kanban board, table, or timeline
 
 ### Workflow management
