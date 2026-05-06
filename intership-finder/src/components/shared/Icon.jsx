@@ -1,10 +1,13 @@
 const paths = {
   logo: (
     <>
-      <path d="M12 3.75 19.25 7.9v8.2L12 20.25 4.75 16.1V7.9L12 3.75Z" />
-      <path d="M8.15 9.95h7.7" />
-      <path d="M8.15 14.05h5.1" />
-      <path d="M12 3.75v16.5" />
+      <path d="M12 3.5 19.4 7.75v8.5L12 20.5l-7.4-4.25v-8.5L12 3.5Z" />
+      <path d="M12 7.15v9.7" />
+      <path d="M8.15 9.5H12" />
+      <path d="M12 14.5h3.85" />
+      <circle cx="12" cy="7.15" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="16.85" r="1" fill="currentColor" stroke="none" />
     </>
   ),
   tracker: (
