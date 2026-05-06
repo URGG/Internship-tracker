@@ -16,7 +16,29 @@ const Modal = lazy(() => import("./components/shared/Modal"));
 const APPS_CACHE_KEY = "appsCache";
 const SUBS_CACHE_KEY = "subsCache";
 
-const normalizeApp = (app) => ({ ...BLANK, ...app, activity_log: app.activity_log || "[]" });
+const normalizeBool = (value) => value === true || value === "true" || value === 1;
+
+const normalizeApp = (app = {}) => {
+  const normalized = { ...BLANK, ...app };
+
+  for (const [key, fallback] of Object.entries(BLANK)) {
+    if (normalized[key] == null) normalized[key] = fallback;
+  }
+
+  normalized.remote = normalizeBool(normalized.remote);
+  normalized.follow_up_sent = normalizeBool(normalized.follow_up_sent);
+  normalized.activity_log =
+    typeof normalized.activity_log === "string"
+      ? normalized.activity_log || "[]"
+      : JSON.stringify(normalized.activity_log || []);
+
+  return normalized;
+};
+
+const jobPayload = (app) => {
+  const normalized = normalizeApp(app);
+  return Object.fromEntries(Object.keys(BLANK).map((key) => [key, normalized[key]]));
+};
 
 const PanelFallback = ({ label = "Loading..." }) => (
   <div className="scard" style={{ display: "flex", flexDirection: "column", gap: 12, alignItems: "center", justifyContent: "center", minHeight: 220, color: "var(--txt3)" }}>
@@ -404,7 +426,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method,
         headers: authHeaders,
-        body: JSON.stringify(form),
+        body: JSON.stringify(jobPayload(form)),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Database error");
@@ -711,31 +733,35 @@ export default function App() {
 
   const onDrop = async (status) => {
     if (!requireAuth() || dragId == null) return;
-    const targetJob = apps.find((x) => x.id === dragId);
+    const movingJobId = dragId;
+    const targetJob = apps.find((x) => x.id === movingJobId);
     if (!targetJob) return;
 
+    const previousJob = normalizeApp(targetJob);
     const nextPayload = {
-      ...targetJob,
+      ...previousJob,
       status,
-      applied_date: status === "Applied" && !targetJob.applied_date ? new Date().toISOString().slice(0, 10) : targetJob.applied_date,
+      applied_date: status === "Applied" && !previousJob.applied_date ? new Date().toISOString().slice(0, 10) : previousJob.applied_date,
     };
+    const payload = jobPayload(nextPayload);
 
-    setApps((a) => a.map((x) => (x.id === dragId ? normalizeApp(nextPayload) : x)));
+    setApps((a) => a.map((x) => (x.id === movingJobId ? normalizeApp(payload) : x)));
     setDragId(null);
     setDragOver(null);
     toast(`Moved to ${status}`, "#5b7fff");
 
     try {
-      const res = await fetch(`${API_BASE}/jobs/${targetJob.id}`, {
+      const res = await fetch(`${API_BASE}/jobs/${movingJobId}`, {
         method: "PUT",
         headers: authHeaders,
-        body: JSON.stringify(nextPayload),
+        body: JSON.stringify(payload),
       });
-      if (!res.ok) throw new Error();
       const data = await res.json();
-      setApps((a) => a.map((x) => (x.id === dragId ? normalizeApp(data) : x)));
-    } catch {
-      toast("Failed to sync drag with database", "#f87171");
+      if (!res.ok) throw new Error(data.detail || "Failed to sync drag with database");
+      setApps((a) => a.map((x) => (x.id === movingJobId ? normalizeApp(data) : x)));
+    } catch (e) {
+      setApps((a) => a.map((x) => (x.id === movingJobId ? previousJob : x)));
+      toast(e.message || "Failed to sync drag with database", "#f87171");
     }
   };
 
