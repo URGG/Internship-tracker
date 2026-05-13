@@ -494,6 +494,15 @@ def find_duplicate_job(db: Session, user_id: int, payload: dict, ignore_job_id: 
             return candidate
     return None
 
+def job_identity_changed(existing_job: JobApplication, payload: dict) -> bool:
+    existing_link = (existing_job.link or "").strip()
+    next_link = (payload.get("link") or "").strip()
+    return (
+        existing_link != next_link
+        or existing_job.company.strip().lower() != payload["company"].strip().lower()
+        or existing_job.role.strip().lower() != payload["role"].strip().lower()
+    )
+
 def normalize_plan(plan: Optional[str]) -> str:
     plan_value = (plan or "free").lower()
     return plan_value if plan_value in AI_MONTHLY_LIMITS else "free"
@@ -1074,9 +1083,10 @@ def update_job(job_id: int, job: JobCreate, current_user: User = Depends(get_cur
     db_job = db.query(JobApplication).filter(JobApplication.id == job_id, JobApplication.user_id == current_user.id).first()
     if not db_job: raise HTTPException(status_code=404, detail="Job not found")
     payload = normalize_job_payload(job)
-    duplicate = find_duplicate_job(db, current_user.id, payload, ignore_job_id=job_id)
-    if duplicate:
-        raise HTTPException(status_code=409, detail="This application is already being tracked")
+    if job_identity_changed(db_job, payload):
+        duplicate = find_duplicate_job(db, current_user.id, payload, ignore_job_id=job_id)
+        if duplicate:
+            raise HTTPException(status_code=409, detail="This application is already being tracked")
 
     activity_log = db_job.activity_log
     if db_job.status != payload["status"]:
