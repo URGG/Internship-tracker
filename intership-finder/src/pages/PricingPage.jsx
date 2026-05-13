@@ -29,9 +29,9 @@ const tiers = {
       highlight: true,
       points: [
         "Everything in Free",
-        "Support continued product development",
-        "Priority access to future premium workflow upgrades",
-        "Keep using optional AI and search with your own keys today",
+        "200 built-in AI actions per month",
+        "No Gemini key setup required for AI tools",
+        "Bring your own key if you go past the monthly quota",
       ],
     },
     {
@@ -46,7 +46,7 @@ const tiers = {
       points: [
         "One payment, permanent access",
         "Best fit for students who do not want subscriptions",
-        "Future paid tracker workflow upgrades included",
+        "300 built-in AI actions per month",
       ],
     },
   ],
@@ -77,9 +77,9 @@ const tiers = {
       highlight: false,
       points: [
         "Everything in Free",
-        "Support continued product development",
-        "Priority access to future premium workflow upgrades",
-        "Keep using optional AI and search with your own keys today",
+        "200 built-in AI actions per month",
+        "No Gemini key setup required for AI tools",
+        "Bring your own key if you go past the monthly quota",
       ],
     },
     {
@@ -94,17 +94,20 @@ const tiers = {
       points: [
         "One payment, permanent access",
         "Best fit for students who do not want subscriptions",
-        "Future paid tracker workflow upgrades included",
-        "Strongest value if you want a premium version later",
+        "300 built-in AI actions per month",
+        "Strongest value if you use AI tools often",
       ],
     },
   ],
 };
 
-export default function PricingPage({ startCheckout, checkoutLoading }) {
+export default function PricingPage({ startCheckout, checkoutLoading, billing }) {
   const [mode, setMode] = useState("monthly");
 
   const plans = useMemo(() => tiers[mode], [mode]);
+  const aiLimit = billing?.ai_monthly_limit || 0;
+  const aiUsed = billing?.ai_used_this_month || 0;
+  const planLabel = billing?.plan ? billing.plan.charAt(0).toUpperCase() + billing.plan.slice(1) : "Free";
 
   return (
     <div style={{ maxWidth: 1120, margin: "0 auto", paddingBottom: 40 }}>
@@ -127,7 +130,7 @@ export default function PricingPage({ startCheckout, checkoutLoading }) {
               </div>
               <h2 style={{ fontSize: 30, lineHeight: 1.1, marginBottom: 10 }}>Simple pricing for students</h2>
               <p style={{ color: "var(--txt2)", maxWidth: 640, lineHeight: 1.7 }}>
-                Keep the tracker free, upgrade later if you want to support development and get future premium workflow upgrades. Optional AI and search use your own keys today.
+                Keep the tracker free, upgrade when you want built-in AI without managing a Gemini key. Optional bring-your-own-key mode still works on every plan.
               </p>
             </div>
 
@@ -144,8 +147,8 @@ export default function PricingPage({ startCheckout, checkoutLoading }) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
             {[
               ["No paywall on the tracker", "Applications, analytics, reminders, exports"],
-              ["Monthly option", "Easy entry if you want premium later"],
-              ["Lifetime option", "One payment for permanent access"],
+              ["Built-in AI on paid plans", "Cover letters, resume match, follow-ups, company intel"],
+              ["Usage stays visible", "Monthly AI quota is tracked from your account"],
             ].map(([title, desc]) => (
               <div key={title} style={{ padding: 16, borderRadius: "var(--r)", background: "var(--s2)", border: "1px solid var(--b0)" }}>
                 <div style={{ fontSize: 12, color: "var(--txt)", marginBottom: 6, fontWeight: 700 }}>{title}</div>
@@ -203,11 +206,11 @@ export default function PricingPage({ startCheckout, checkoutLoading }) {
       </div>
 
       <div className="scard" style={{ margin: 0 }}>
-        <h3 style={{ marginBottom: 14 }}>Recommended release positioning</h3>
+        <h3 style={{ marginBottom: 14 }}>Current plan</h3>
         <div style={{ display: "grid", gap: 10, color: "var(--txt2)", fontSize: 13, lineHeight: 1.7 }}>
-          <div>Free: core tracker forever, optional bring-your-own-key AI.</div>
-          <div>Pro Monthly: support development and get future premium workflow upgrades.</div>
-          <div>Lifetime: strongest pitch for students who prefer one payment over a subscription.</div>
+          <div>{planLabel}: {billing?.subscription_status || "free"}</div>
+          <div>Built-in AI: {aiLimit > 0 ? `${aiUsed} / ${aiLimit} used this month` : "not included on free"}</div>
+          <div>{billing?.has_user_gemini_key ? "Your Gemini key is saved as a fallback." : "You can add your own Gemini key any time in Settings."}</div>
         </div>
       </div>
     </div>

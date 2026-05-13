@@ -22,6 +22,7 @@ export default function SettingsPage({
   hL,
   setHL,
   hLoading,
+  billing,
   onExportCsv,
   onExportJson,
   toast,
@@ -29,6 +30,10 @@ export default function SettingsPage({
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
   const fileInputRef = useRef(null);
+  const planLabel = billing?.plan ? billing.plan.charAt(0).toUpperCase() + billing.plan.slice(1) : "Free";
+  const aiLimit = billing?.ai_monthly_limit || 0;
+  const aiUsed = billing?.ai_used_this_month || 0;
+  const aiRemaining = billing?.ai_remaining_this_month || 0;
 
   const processResumeFile = async (file) => {
     if (!file || file.type !== "application/pdf") {
@@ -81,26 +86,43 @@ export default function SettingsPage({
       </div>
 
       <div className="scard">
+        <h3>Plan and AI Usage</h3>
+        <p style={{ fontSize: 12, color: "var(--txt2)", marginBottom: 12 }}>
+          Current plan: <strong style={{ color: "var(--txt)" }}>{planLabel}</strong>
+          {billing?.subscription_status ? ` | ${billing.subscription_status}` : ""}
+        </p>
+        {aiLimit > 0 ? (
+          <div className="note" style={{ marginTop: 0 }}>
+            Built-in AI usage this month: {aiUsed} / {aiLimit}. Remaining: {aiRemaining}.
+          </div>
+        ) : (
+          <div className="note" style={{ marginTop: 0 }}>
+            Built-in AI is included on Pro and Lifetime. Free users can still add a Gemini key below.
+          </div>
+        )}
+      </div>
+
+      <div className="scard">
         <h3>Optional API Keys</h3>
         <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>
-          Keys are optional and only unlock paid external services. They are encrypted in the database and never stored in plain text.
+          Keys are optional. They are encrypted in the database and never stored in plain text.
         </p>
         <div className="srow">
           <label>RapidAPI Key</label>
           <input type="password" value={rKey} onChange={(e) => setRKey(e.target.value)} placeholder="Paste JSearch key here..." />
         </div>
         <div className="note" style={{ marginBottom: 14 }}>
-          Used for: live job search and auto-hunter.
+          Used for: live job search and auto-hunter. Saving runs a small JSearch validation request.
         </div>
         <div className="srow">
           <label>Gemini API Key</label>
           <input type="password" value={gKey} onChange={(e) => setGKey(e.target.value)} placeholder="Paste Gemini key here..." />
         </div>
         <div className="note" style={{ marginBottom: 14 }}>
-          Used for: AI cover letters, resume match, follow-up drafts, and company intel.
+          Used for: AI cover letters, resume match, follow-up drafts, and company intel. Saving runs a small Gemini validation request.
         </div>
         <button className="mbtn mbtn-p" onClick={saveUserKeys} style={{ marginTop: 12 }}>
-          Save Optional Keys
+          Validate and Save Keys
         </button>
       </div>
 

@@ -54,6 +54,7 @@ except Exception as exc:
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+SERVER_GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 STRIPE_PRO_MONTHLY_PRICE_ID = os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID")
@@ -145,12 +146,31 @@ class SearchSubscription(Base):
     location = Column(String)
     job_type = Column(String, default="INTERN")
 
+class UsageEvent(Base):
+    __tablename__ = "usage_events"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True)
+    feature = Column(String, index=True)
+    created_at = Column(String, index=True)
+
 VALID_STATUSES = {"To Do", "Applied", "Interview", "Offer", "Rejected"}
 VALID_INTERVIEW_STAGES = {"", "Online Assessment", "Recruiter Screen", "Technical", "Behavioral", "Final Round", "Take Home"}
 VALID_JOB_TYPES = {"", "INTERN", "FULLTIME", "PARTTIME", "CONTRACTOR"}
 VALID_DATE_POSTED = {"", "today", "3days", "week", "month"}
 STATUS_ALIASES = {"Phone Screen": "Interview"}
 INTERVIEW_STAGE_ALIASES = {"Phone Screen": "Recruiter Screen"}
+
+def parse_int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+AI_MONTHLY_LIMITS = {
+    "free": 0,
+    "pro": parse_int_env("PRO_AI_MONTHLY_LIMIT", 200),
+    "lifetime": parse_int_env("LIFETIME_AI_MONTHLY_LIMIT", 300),
+}
 
 class UserAuth(BaseModel):
     username: str
@@ -474,9 +494,35 @@ def find_duplicate_job(db: Session, user_id: int, payload: dict, ignore_job_id: 
             return candidate
     return None
 
-def get_user_gemini_key(current_user: User) -> str:
-    if not current_user.enc_gemini_key:
-        raise HTTPException(status_code=400, detail="Add Gemini API Key in Settings first")
+def normalize_plan(plan: Optional[str]) -> str:
+    plan_value = (plan or "free").lower()
+    return plan_value if plan_value in AI_MONTHLY_LIMITS else "free"
+
+def is_paid_plan(plan: Optional[str]) -> bool:
+    return normalize_plan(plan) in {"pro", "lifetime"}
+
+def current_month_start_iso() -> str:
+    now = datetime.utcnow()
+    return datetime(now.year, now.month, 1).isoformat(timespec="seconds") + "Z"
+
+def get_monthly_ai_usage(db: Session, user_id: int) -> int:
+    return db.query(UsageEvent).filter(
+        UsageEvent.user_id == user_id,
+        UsageEvent.created_at >= current_month_start_iso(),
+    ).count()
+
+def record_ai_usage(db: Session, user_id: int, feature: str):
+    db.add(UsageEvent(
+        user_id=user_id,
+        feature=feature,
+        created_at=datetime.utcnow().isoformat(timespec="seconds") + "Z",
+    ))
+    db.commit()
+
+def get_ai_monthly_limit(plan: Optional[str]) -> int:
+    return AI_MONTHLY_LIMITS.get(normalize_plan(plan), 0)
+
+def decrypt_user_gemini_key(current_user: User) -> str:
     try:
         return cipher_suite.decrypt(current_user.enc_gemini_key.encode()).decode()
     except InvalidToken:
@@ -484,6 +530,46 @@ def get_user_gemini_key(current_user: User) -> str:
             status_code=400,
             detail="Stored Gemini API key could not be decrypted. Re-save your Gemini key in Settings."
         )
+
+def get_ai_usage_summary(current_user: User, db: Session):
+    plan = normalize_plan(current_user.plan)
+    used = get_monthly_ai_usage(db, current_user.id)
+    limit = get_ai_monthly_limit(plan)
+    has_server_ai = bool(SERVER_GEMINI_API_KEY)
+    has_own_key = bool(current_user.enc_gemini_key)
+    included = is_paid_plan(plan)
+
+    return {
+        "plan": plan,
+        "ai_used_this_month": used,
+        "ai_monthly_limit": limit,
+        "ai_remaining_this_month": max(0, limit - used),
+        "ai_included": included,
+        "ai_server_configured": has_server_ai,
+        "has_user_gemini_key": has_own_key,
+        "ai_available": (included and has_server_ai and used < limit) or has_own_key,
+    }
+
+def get_gemini_key_for_user(current_user: User, db: Session):
+    plan = normalize_plan(current_user.plan)
+    paid = is_paid_plan(plan)
+
+    if paid and SERVER_GEMINI_API_KEY:
+        used = get_monthly_ai_usage(db, current_user.id)
+        limit = get_ai_monthly_limit(plan)
+        if used >= limit:
+            if current_user.enc_gemini_key:
+                return decrypt_user_gemini_key(current_user), False
+            raise HTTPException(status_code=429, detail="Monthly built-in AI limit reached. Add your own Gemini key in Settings to keep using AI.")
+        return SERVER_GEMINI_API_KEY, True
+
+    if current_user.enc_gemini_key:
+        return decrypt_user_gemini_key(current_user), False
+
+    if paid:
+        raise HTTPException(status_code=503, detail="Built-in AI is not configured yet. Add your own Gemini key in Settings or try again later.")
+
+    raise HTTPException(status_code=402, detail="Upgrade for built-in AI or add your own Gemini API key in Settings.")
 
 def extract_gemini_text(response) -> str:
     try:
@@ -524,6 +610,39 @@ def normalize_ai_error(error: Exception) -> HTTPException:
         return HTTPException(status_code=502, detail=f"Gemini model '{GEMINI_MODEL}' is not available for this API key.")
     return HTTPException(status_code=502, detail=f"Gemini request failed: {message}")
 
+def validate_gemini_key(api_key: str):
+    try:
+        generate_gemini_content(api_key, "Reply with exactly: OK", temperature=0)
+    except HTTPException as exc:
+        raise HTTPException(status_code=exc.status_code, detail=f"Gemini key validation failed: {exc.detail}")
+
+def validate_rapidapi_key(api_key: str):
+    try:
+        response = requests.get(
+            "https://jsearch.p.rapidapi.com/search",
+            headers={
+                "X-RapidAPI-Key": api_key,
+                "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+            },
+            params={
+                "query": "software engineering intern in Remote",
+                "page": "1",
+                "num_pages": "1",
+                "date_posted": "today",
+                "employment_types": "INTERN",
+            },
+            timeout=10,
+        )
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"RapidAPI validation request failed: {str(exc)}")
+
+    if response.status_code in {401, 403}:
+        raise HTTPException(status_code=400, detail="RapidAPI key validation failed: key is invalid or does not have JSearch access.")
+    if response.status_code == 429:
+        raise HTTPException(status_code=429, detail="RapidAPI key validation failed: quota or rate limit reached.")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"RapidAPI key validation failed with status {response.status_code}.")
+
 def generate_gemini_content(api_key: str, prompt: str, schema: Optional[dict] = None, temperature: float = 0.4) -> str:
     if google_genai and google_genai_types:
         try:
@@ -559,6 +678,13 @@ def generate_gemini_content(api_key: str, prompt: str, schema: Optional[dict] = 
         raise
     except Exception as e:
         raise normalize_ai_error(e)
+
+def generate_user_gemini_content(current_user: User, db: Session, feature: str, prompt: str, schema: Optional[dict] = None, temperature: float = 0.4) -> str:
+    api_key, records_usage = get_gemini_key_for_user(current_user, db)
+    content = generate_gemini_content(api_key, prompt, schema, temperature)
+    if records_usage:
+        record_ai_usage(db, current_user.id, feature)
+    return content
 
 def extract_json_object(raw: str) -> dict:
     content = (raw or "").strip()
@@ -775,6 +901,11 @@ def health(db: Session = Depends(get_db)):
             "pro_price_configured": bool(STRIPE_PRO_MONTHLY_PRICE_ID),
             "lifetime_price_configured": bool(STRIPE_LIFETIME_PRICE_ID),
         },
+        "ai": {
+            "server_gemini_configured": bool(SERVER_GEMINI_API_KEY),
+            "pro_monthly_limit": AI_MONTHLY_LIMITS["pro"],
+            "lifetime_monthly_limit": AI_MONTHLY_LIMITS["lifetime"],
+        },
         "gemini_model": GEMINI_MODEL,
         "environment": APP_ENV,
     }
@@ -804,17 +935,25 @@ def login(user: UserAuth, db: Session = Depends(get_db)):
 def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     rapid_key = (keys.rapid_key or "").strip()
     gemini_key = (keys.gemini_key or "").strip()
+    validated = []
     if rapid_key:
+        validate_rapidapi_key(rapid_key)
         current_user.enc_rapid_key = cipher_suite.encrypt(rapid_key.encode()).decode()
+        validated.append("rapidapi")
     if gemini_key:
+        validate_gemini_key(gemini_key)
         current_user.enc_gemini_key = cipher_suite.encrypt(gemini_key.encode()).decode()
+        validated.append("gemini")
+    if not validated:
+        raise HTTPException(status_code=400, detail="Paste at least one key to validate and save.")
     db.commit()
-    return {"message": "Keys secured"}
+    return {"message": "Keys validated and secured", "validated": validated}
 
 @app.get("/api/billing/me")
-def get_billing_status(current_user: User = Depends(get_current_user)):
+def get_billing_status(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    ai_summary = get_ai_usage_summary(current_user, db)
     return {
-        "plan": current_user.plan or "free",
+        **ai_summary,
         "subscription_status": current_user.subscription_status or "free",
         "current_period_end": current_user.current_period_end,
     }
@@ -1043,9 +1182,7 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/resume-match")
-def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_current_user)):
-    gemini_key = get_user_gemini_key(current_user)
-
+def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     prompt = f"""
     You are evaluating a candidate's resume against an internship posting.
     Company: {req.company}
@@ -1067,7 +1204,7 @@ def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_curre
     """
 
     try:
-        content = generate_gemini_content(gemini_key, prompt, RESUME_MATCH_SCHEMA, temperature=0.2)
+        content = generate_user_gemini_content(current_user, db, "resume_match", prompt, RESUME_MATCH_SCHEMA, temperature=0.2)
         parsed = extract_json_object(content)
         parsed["score"] = max(0, min(100, int(parsed.get("score", 0))))
         parsed["strengths"] = parsed.get("strengths") or []
@@ -1081,9 +1218,7 @@ def resume_match(req: ResumeMatchRequest, current_user: User = Depends(get_curre
         raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
 
 @app.post("/api/generate-followup")
-def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_current_user)):
-    gemini_key = get_user_gemini_key(current_user)
-
+def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     prompt = f"""
     Write a concise, professional follow-up email for a job applicant.
     Company: {req.company}
@@ -1102,16 +1237,14 @@ def generate_followup(req: FollowUpRequest, current_user: User = Depends(get_cur
     """
 
     try:
-        return {"text": generate_gemini_content(gemini_key, prompt)}
+        return {"text": generate_user_gemini_content(current_user, db, "generate_followup", prompt)}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
 
 @app.post("/api/generate-cover")
-def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user)):
-    gemini_key = get_user_gemini_key(current_user)
-    
+def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     prompt = f"""
     Write a professional and concise cover letter for an internship application.
     Company: {req.company}
@@ -1123,16 +1256,14 @@ def generate_cover(req: CoverRequest, current_user: User = Depends(get_current_u
     """
     
     try:
-        return {"text": generate_gemini_content(gemini_key, prompt)}
+        return {"text": generate_user_gemini_content(current_user, db, "generate_cover", prompt)}
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
 
 @app.post("/api/company-intel")
-def get_company_intel(req: IntelRequest, current_user: User = Depends(get_current_user)):
-    gemini_key = get_user_gemini_key(current_user)
-    
+def get_company_intel(req: IntelRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     prompt = f"""
     Provide professional insights for an internship/job applicant for the company '{req.company}' and role '{req.role}'.
     Return the response in EXACTLY this JSON format:
@@ -1148,7 +1279,7 @@ def get_company_intel(req: IntelRequest, current_user: User = Depends(get_curren
     """
     
     try:
-        content = generate_gemini_content(gemini_key, prompt, COMPANY_INTEL_SCHEMA, temperature=0.3)
+        content = generate_user_gemini_content(current_user, db, "company_intel", prompt, COMPANY_INTEL_SCHEMA, temperature=0.3)
         parsed = extract_json_object(content)
         parsed["estimated_salary"] = parsed.get("estimated_salary") or "N/A"
         parsed["culture_pros"] = parsed.get("culture_pros") or []

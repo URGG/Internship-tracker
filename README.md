@@ -163,6 +163,10 @@ Optional:
 - `APP_ENV`
 - `FRONTEND_URL`
 - `CORS_ORIGINS`
+- `GEMINI_API_KEY`
+- `GEMINI_MODEL`
+- `PRO_AI_MONTHLY_LIMIT`
+- `LIFETIME_AI_MONTHLY_LIMIT`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PRO_MONTHLY_PRICE_ID`
@@ -173,6 +177,8 @@ If `DATABASE_URL` is not set, the backend falls back to a local SQLite database 
 Stripe Checkout uses Dashboard-managed payment methods. In Stripe, create one recurring monthly Price and one one-time lifetime Price, put those Price IDs in the backend environment, then enable the payment methods you want in the Stripe Dashboard payment method settings. Configure a webhook endpoint at `/api/billing/webhook` and subscribe to Checkout, subscription, and invoice payment events. Do not add the Stripe secret key to the frontend.
 
 The backend exposes `/api/health` for deployment checks. It reports database reachability and whether Stripe environment variables are configured without exposing secret values.
+
+Paid AI uses the server-owned `GEMINI_API_KEY`. Free users can still add their own Gemini key in Settings. Pro and Lifetime users receive a monthly built-in AI quota, tracked in the `usage_events` table and returned from `/api/billing/me`.
 
 ### Frontend
 

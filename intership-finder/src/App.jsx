@@ -15,6 +15,18 @@ const Modal = lazy(() => import("./components/shared/Modal"));
 
 const APPS_CACHE_KEY = "appsCache";
 const SUBS_CACHE_KEY = "subsCache";
+const DEFAULT_BILLING = {
+  plan: "free",
+  subscription_status: "free",
+  current_period_end: null,
+  ai_used_this_month: 0,
+  ai_monthly_limit: 0,
+  ai_remaining_this_month: 0,
+  ai_included: false,
+  ai_server_configured: false,
+  has_user_gemini_key: false,
+  ai_available: false,
+};
 
 const normalizeBool = (value) => value === true || value === "true" || value === 1;
 const normalizeStatus = (status) => (status === "Phone Screen" ? "Interview" : status);
@@ -200,6 +212,7 @@ export default function App() {
   const [hQ, setHQ] = useState("");
   const [hL, setHL] = useState("");
   const [hLoading, setHLoading] = useState(false);
+  const [billing, setBilling] = useState(DEFAULT_BILLING);
 
   const toast = useCallback((msg, color = "#34d399") => {
     const id = uid();
@@ -220,7 +233,22 @@ export default function App() {
     setToken(null);
     setApps([]);
     setSubs([]);
+    setBilling(DEFAULT_BILLING);
   }, []);
+
+  const refreshBilling = useCallback(async () => {
+    if (!token) {
+      setBilling(DEFAULT_BILLING);
+      return;
+    }
+
+    try {
+      const res = await fetch(`${API_BASE}/billing/me`, { headers: { Authorization: `Bearer ${token}` } });
+      if (res.ok) setBilling({ ...DEFAULT_BILLING, ...(await res.json()) });
+    } catch {
+      // Billing status is non-critical for the tracker workflow.
+    }
+  }, [token]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -228,8 +256,9 @@ export default function App() {
     if (!checkout) return;
 
     toast(checkout === "success" ? "Payment confirmed. Your plan will update shortly." : "Checkout cancelled", checkout === "success" ? "#34d399" : "#fbbf24");
+    if (checkout === "success") refreshBilling();
     window.history.replaceState({}, "", window.location.pathname);
-  }, [toast]);
+  }, [refreshBilling, toast]);
 
   useEffect(() => {
     localStorage.setItem("resumeTxt", resumeTxt);
@@ -283,24 +312,26 @@ export default function App() {
     if (!token) {
       setApps([]);
       setSubs([]);
+      setBilling(DEFAULT_BILLING);
       localStorage.removeItem(APPS_CACHE_KEY);
       localStorage.removeItem(SUBS_CACHE_KEY);
       return;
     }
 
     const headers = { Authorization: `Bearer ${token}` };
-    Promise.all([fetch(`${API_BASE}/jobs`, { headers }), fetch(`${API_BASE}/subscriptions`, { headers })])
-      .then(async ([jobsRes, subsRes]) => {
-        if (jobsRes.status === 401 || subsRes.status === 401) {
+    Promise.all([fetch(`${API_BASE}/jobs`, { headers }), fetch(`${API_BASE}/subscriptions`, { headers }), fetch(`${API_BASE}/billing/me`, { headers })])
+      .then(async ([jobsRes, subsRes, billingRes]) => {
+        if (jobsRes.status === 401 || subsRes.status === 401 || billingRes.status === 401) {
           clearAuthSession();
           toast("Session expired. Please log in again.", "#fbbf24");
           openAuth("login");
           return;
         }
 
-        const [jobsData, subsData] = await Promise.all([jobsRes.json(), subsRes.json()]);
+        const [jobsData, subsData, billingData] = await Promise.all([jobsRes.json(), subsRes.json(), billingRes.json()]);
         if (Array.isArray(jobsData)) setApps(jobsData.map(normalizeApp));
         if (Array.isArray(subsData)) setSubs(subsData);
+        if (billingData && typeof billingData === "object") setBilling({ ...DEFAULT_BILLING, ...billingData });
       })
       .catch(() => {
         toast("Using cached jobs while the backend wakes up", "#fbbf24");
@@ -386,10 +417,12 @@ export default function App() {
         headers: authHeaders,
         body: JSON.stringify({ rapid_key: rKey, gemini_key: gKey }),
       });
-      if (!res.ok) throw new Error("Failed to secure keys");
-      toast("Keys encrypted in vault", "#34d399");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Failed to validate and secure keys");
+      toast("Keys validated and encrypted", "#34d399");
       setRKey("");
       setGKey("");
+      refreshBilling();
     } catch (e) {
       toast(e.message, "#f87171");
     }
@@ -548,6 +581,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "AI generation failed");
       setCoverOut(data.text);
+      refreshBilling();
     } catch (e) {
       setCoverOut(e.message);
     }
@@ -576,6 +610,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Resume match failed");
       setMatchData(data);
+      refreshBilling();
     } catch (e) {
       toast(e.message, "#f87171");
     } finally {
@@ -609,6 +644,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Follow-up draft failed");
       setFollowUpOut(data.text);
+      refreshBilling();
     } catch (e) {
       toast(e.message, "#f87171");
     } finally {
@@ -666,6 +702,7 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to fetch intel");
       setIntelData(data);
+      refreshBilling();
     } catch (e) {
       toast(e.message, "#f87171");
       setModal("edit");
@@ -972,7 +1009,7 @@ export default function App() {
             )}
             {page === "pricing" && (
               <Suspense fallback={<PanelFallback label="Loading pricing..." />}>
-                <PricingPage startCheckout={startCheckout} checkoutLoading={checkoutLoading} />
+                <PricingPage startCheckout={startCheckout} checkoutLoading={checkoutLoading} billing={billing} />
               </Suspense>
             )}
             {page === "settings" && (
@@ -994,6 +1031,7 @@ export default function App() {
                   hL={hL}
                   setHL={setHL}
                   hLoading={hLoading}
+                  billing={billing}
                   onExportCsv={exportJobsCsv}
                   onExportJson={exportJobsJson}
                   toast={toast}
