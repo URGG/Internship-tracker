@@ -4,6 +4,9 @@ from datetime import date, datetime, timedelta
 from typing import Optional, List
 import re
 from html import unescape
+from ipaddress import ip_address
+from socket import getaddrinfo
+from urllib.parse import urlparse
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -29,21 +32,26 @@ except ImportError:
     google_genai = None
     google_genai_types = None
 
-try:
-    import google.generativeai as legacy_genai
-except ImportError:
-    legacy_genai = None
+legacy_genai = None
 
 load_dotenv()
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 ALGORITHM = "HS256"
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+APP_ENV = os.getenv("APP_ENV", os.getenv("ENVIRONMENT", "development")).lower()
 
 if not JWT_SECRET or not ENCRYPTION_KEY:
     raise RuntimeError("CRITICAL: Missing JWT_SECRET or ENCRYPTION_KEY in .env file.")
 
-cipher_suite = Fernet(ENCRYPTION_KEY.encode())
+if APP_ENV == "production" and len(JWT_SECRET) < 32:
+    raise RuntimeError("CRITICAL: JWT_SECRET must be at least 32 characters in production.")
+
+try:
+    cipher_suite = Fernet(ENCRYPTION_KEY.encode())
+except Exception as exc:
+    raise RuntimeError("CRITICAL: ENCRYPTION_KEY must be a valid Fernet key.") from exc
+
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/login")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
@@ -51,11 +59,31 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 STRIPE_PRO_MONTHLY_PRICE_ID = os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID")
 STRIPE_LIFETIME_PRICE_ID = os.getenv("STRIPE_LIFETIME_PRICE_ID")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS")
+
+if APP_ENV == "production" and FRONTEND_URL.startswith(("http://localhost", "http://127.0.0.1")):
+    raise RuntimeError("CRITICAL: FRONTEND_URL must be your deployed frontend URL in production.")
+
+def parse_csv_env(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    return [item.strip().rstrip("/") for item in value.split(",") if item.strip()]
+
+allowed_origins = parse_csv_env(CORS_ORIGINS)
+if FRONTEND_URL and FRONTEND_URL not in allowed_origins:
+    allowed_origins.append(FRONTEND_URL)
+if APP_ENV != "production":
+    for local_origin in ["http://localhost:5173", "http://127.0.0.1:5173"]:
+        if local_origin not in allowed_origins:
+            allowed_origins.append(local_origin)
 
 if stripe and STRIPE_SECRET_KEY:
     stripe.api_key = STRIPE_SECRET_KEY
 
 SQLALCHEMY_DATABASE_URL = os.getenv("DATABASE_URL")
+
+if APP_ENV == "production" and not SQLALCHEMY_DATABASE_URL:
+    raise RuntimeError("CRITICAL: DATABASE_URL is required in production.")
 
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
@@ -64,9 +92,9 @@ if not SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL = "sqlite:///./intern_tracker.db"
 
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False})
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}, pool_pre_ping=True)
 else:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL)
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, pool_pre_ping=True)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -92,7 +120,7 @@ class JobApplication(Base):
     role = Column(String)
     status = Column(String, default="To Do")
     source = Column(String)
-    applied_date = Column(String, default=str(date.today()))
+    applied_date = Column(String, default=lambda: str(date.today()))
     deadline = Column(String, nullable=True)
     location = Column(String, nullable=True)
     remote = Column(Boolean, default=False)
@@ -119,6 +147,8 @@ class SearchSubscription(Base):
 
 VALID_STATUSES = {"To Do", "Applied", "Interview", "Offer", "Rejected"}
 VALID_INTERVIEW_STAGES = {"", "Online Assessment", "Recruiter Screen", "Technical", "Behavioral", "Final Round", "Take Home"}
+VALID_JOB_TYPES = {"", "INTERN", "FULLTIME", "PARTTIME", "CONTRACTOR"}
+VALID_DATE_POSTED = {"", "today", "3days", "week", "month"}
 STATUS_ALIASES = {"Phone Screen": "Interview"}
 INTERVIEW_STAGE_ALIASES = {"Phone Screen": "Recruiter Screen"}
 
@@ -193,8 +223,8 @@ app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=allowed_origins or ["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -312,6 +342,9 @@ def stripe_object_to_dict(value):
         return value.to_dict_recursive()
     return value
 
+def is_subscription_active(status: Optional[str]) -> bool:
+    return status in {"active", "trialing"}
+
 def format_stripe_timestamp(value):
     if not value:
         return None
@@ -322,8 +355,30 @@ def sync_user_subscription_from_stripe(user: User, subscription):
     user.stripe_subscription_id = data.get("id")
     user.subscription_status = data.get("status") or "unknown"
     user.current_period_end = format_stripe_timestamp(data.get("current_period_end"))
-    if user.subscription_status in {"active", "trialing"}:
-        user.plan = "pro"
+    user.plan = "pro" if is_subscription_active(user.subscription_status) else "free"
+
+def grant_lifetime_access(user: User):
+    user.plan = "lifetime"
+    user.subscription_status = "active"
+    user.stripe_subscription_id = None
+    user.current_period_end = None
+
+def sync_user_subscription_by_id(db: Session, subscription_id: Optional[str]):
+    if not subscription_id:
+        return None
+    subscription = stripe.Subscription.retrieve(subscription_id)
+    user = find_user_for_stripe_event(db, subscription)
+    if user:
+        sync_user_subscription_from_stripe(user, subscription)
+        db.commit()
+    return user
+
+def get_invoice_subscription_id(invoice: dict) -> Optional[str]:
+    subscription_id = invoice.get("subscription")
+    if subscription_id:
+        return subscription_id
+    subscription_details = invoice.get("subscription_details") or {}
+    return subscription_details.get("subscription")
 
 def find_user_for_stripe_event(db: Session, event_object):
     data = stripe_object_to_dict(event_object)
@@ -358,8 +413,13 @@ def append_activity(existing_log: Optional[str], message: str):
     })
     return json.dumps(entries[-50:])
 
+def model_to_dict(model: BaseModel):
+    if hasattr(model, "model_dump"):
+        return model.model_dump()
+    return model.dict()
+
 def normalize_job_payload(job: JobCreate):
-    payload = job.dict()
+    payload = model_to_dict(job)
     payload["company"] = payload["company"].strip()
     payload["role"] = payload["role"].strip()
     payload["status"] = payload["status"].strip()
@@ -383,6 +443,17 @@ def normalize_job_payload(job: JobCreate):
 
     payload["activity_log"] = payload.get("activity_log") or None
 
+    return payload
+
+def normalize_subscription_payload(sub: SubscriptionCreate):
+    payload = model_to_dict(sub)
+    payload["query"] = payload["query"].strip()[:120]
+    payload["location"] = (payload["location"] or "Remote").strip()[:120] or "Remote"
+    payload["job_type"] = (payload["job_type"] or "INTERN").strip().upper()
+    if not payload["query"]:
+        raise HTTPException(status_code=400, detail="Search query is required")
+    if payload["job_type"] not in VALID_JOB_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid job type")
     return payload
 
 def find_duplicate_job(db: Session, user_id: int, payload: dict, ignore_job_id: Optional[int] = None):
@@ -505,6 +576,21 @@ def extract_json_object(raw: str) -> dict:
             return json.loads(content[start:end + 1])
         raise
 
+def normalize_username(value: str) -> str:
+    username = (value or "").strip().lower()
+    if not re.fullmatch(r"[a-z0-9._@-]{3,80}", username):
+        raise HTTPException(
+            status_code=400,
+            detail="Username must be 3-80 characters and use only letters, numbers, dots, underscores, hyphens, or @.",
+        )
+    return username
+
+def validate_password(value: str):
+    if not value or len(value) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters")
+    if len(value) > 256:
+        raise HTTPException(status_code=400, detail="Password is too long")
+
 RESUME_MATCH_SCHEMA = {
     "type": "object",
     "properties": {
@@ -560,7 +646,38 @@ def infer_source_from_url(url: str) -> str:
         return "Handshake"
     return "Other"
 
+def ensure_public_http_url(url: str) -> str:
+    parsed = urlparse(url)
+    if parsed.scheme not in {"http", "https"} or not parsed.hostname:
+        raise HTTPException(status_code=400, detail="Enter a valid http or https job URL")
+    if parsed.username or parsed.password:
+        raise HTTPException(status_code=400, detail="Job URL cannot include credentials")
+
+    hostname = parsed.hostname.lower()
+    if hostname in {"localhost", "0.0.0.0"} or hostname.endswith(".localhost"):
+        raise HTTPException(status_code=400, detail="Local URLs cannot be imported")
+
+    try:
+        addresses = {info[4][0] for info in getaddrinfo(hostname, parsed.port or (443 if parsed.scheme == "https" else 80))}
+    except OSError:
+        raise HTTPException(status_code=400, detail="Could not resolve job URL")
+
+    for address in addresses:
+        parsed_address = ip_address(address)
+        if (
+            parsed_address.is_private
+            or parsed_address.is_loopback
+            or parsed_address.is_link_local
+            or parsed_address.is_reserved
+            or parsed_address.is_multicast
+            or parsed_address.is_unspecified
+        ):
+            raise HTTPException(status_code=400, detail="Private or internal URLs cannot be imported")
+
+    return url
+
 def scrape_job_posting(url: str) -> dict:
+    url = ensure_public_http_url(url)
     try:
         response = requests.get(
             url,
@@ -641,19 +758,43 @@ def scrape_job_posting(url: str) -> dict:
         "link": url,
     }
 
+@app.get("/api/health")
+def health(db: Session = Depends(get_db)):
+    try:
+        db.execute(text("SELECT 1"))
+        database = "ok"
+    except Exception:
+        database = "error"
+
+    return {
+        "status": "ok" if database == "ok" else "degraded",
+        "database": database,
+        "stripe": {
+            "enabled": bool(stripe and STRIPE_SECRET_KEY),
+            "webhook_configured": bool(STRIPE_WEBHOOK_SECRET),
+            "pro_price_configured": bool(STRIPE_PRO_MONTHLY_PRICE_ID),
+            "lifetime_price_configured": bool(STRIPE_LIFETIME_PRICE_ID),
+        },
+        "gemini_model": GEMINI_MODEL,
+        "environment": APP_ENV,
+    }
+
 @app.post("/api/signup")
 def signup(user: UserAuth, db: Session = Depends(get_db)):
-    if db.query(User).filter(User.username == user.username).first():
+    username = normalize_username(user.username)
+    validate_password(user.password)
+    if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="Username taken")
     hashed_pw = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    new_user = User(username=user.username, hashed_password=hashed_pw)
+    new_user = User(username=username, hashed_password=hashed_pw)
     db.add(new_user)
     db.commit()
     return {"message": "Success"}
 
 @app.post("/api/login")
 def login(user: UserAuth, db: Session = Depends(get_db)):
-    db_user = db.query(User).filter(User.username == user.username).first()
+    username = normalize_username(user.username)
+    db_user = db.query(User).filter(User.username == username).first()
     if not db_user or not bcrypt.checkpw(user.password.encode('utf-8'), db_user.hashed_password.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     token = jwt.encode({"sub": db_user.username, "exp": datetime.utcnow() + timedelta(days=7)}, JWT_SECRET, algorithm=ALGORITHM)
@@ -661,10 +802,12 @@ def login(user: UserAuth, db: Session = Depends(get_db)):
 
 @app.post("/api/update-keys")
 def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if keys.rapid_key:
-        current_user.enc_rapid_key = cipher_suite.encrypt(keys.rapid_key.encode()).decode()
-    if keys.gemini_key:
-        current_user.enc_gemini_key = cipher_suite.encrypt(keys.gemini_key.encode()).decode()
+    rapid_key = (keys.rapid_key or "").strip()
+    gemini_key = (keys.gemini_key or "").strip()
+    if rapid_key:
+        current_user.enc_rapid_key = cipher_suite.encrypt(rapid_key.encode()).decode()
+    if gemini_key:
+        current_user.enc_gemini_key = cipher_suite.encrypt(gemini_key.encode()).decode()
     db.commit()
     return {"message": "Keys secured"}
 
@@ -707,6 +850,8 @@ def create_checkout_session(req: CheckoutRequest, current_user: User = Depends(g
 
         session = stripe.checkout.Session.create(**session_params)
         return {"url": session.url}
+    except stripe.error.StripeError as e:
+        raise HTTPException(status_code=502, detail=f"Stripe checkout failed: {getattr(e, 'user_message', None) or str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Stripe checkout failed: {str(e)}")
 
@@ -718,6 +863,8 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 
     payload = await request.body()
     signature = request.headers.get("stripe-signature")
+    if not signature:
+        raise HTTPException(status_code=400, detail="Missing Stripe signature")
 
     try:
         event = stripe.Webhook.construct_event(payload, signature, STRIPE_WEBHOOK_SECRET)
@@ -735,22 +882,31 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
         if user:
             user.stripe_customer_id = event_data.get("customer") or user.stripe_customer_id
             if event_data.get("mode") == "payment" and (event_type == "checkout.session.async_payment_succeeded" or event_data.get("payment_status") == "paid"):
-                user.plan = (event_data.get("metadata") or {}).get("plan") or "lifetime"
-                user.subscription_status = "active"
-                user.stripe_subscription_id = None
-                user.current_period_end = None
+                grant_lifetime_access(user)
             elif event_data.get("mode") == "subscription" and event_data.get("subscription"):
-                subscription = stripe.Subscription.retrieve(event_data["subscription"])
-                sync_user_subscription_from_stripe(user, subscription)
+                try:
+                    subscription = stripe.Subscription.retrieve(event_data["subscription"])
+                    sync_user_subscription_from_stripe(user, subscription)
+                except stripe.error.StripeError:
+                    user.subscription_status = "pending"
             db.commit()
 
-    if event_type in {"customer.subscription.created", "customer.subscription.updated", "customer.subscription.deleted"}:
+    if event_type in {
+        "customer.subscription.created",
+        "customer.subscription.updated",
+        "customer.subscription.deleted",
+        "customer.subscription.paused",
+        "customer.subscription.resumed",
+    }:
         user = find_user_for_stripe_event(db, event_object)
         if user:
             sync_user_subscription_from_stripe(user, event_object)
-            if user.subscription_status in {"canceled", "unpaid", "incomplete_expired"}:
-                user.plan = "free"
             db.commit()
+
+    if event_type in {"invoice.payment_failed", "invoice.payment_succeeded", "invoice.paid", "invoice.payment_action_required", "invoice.finalization_failed"}:
+        subscription_id = get_invoice_subscription_id(event_data)
+        if subscription_id:
+            sync_user_subscription_by_id(db, subscription_id)
 
     return {"received": True}
 
@@ -815,29 +971,40 @@ def delete_job(job_id: int, current_user: User = Depends(get_current_user), db: 
 @app.get("/api/cities")
 def proxy_cities(q: str):
     """Proxy Teleport API to avoid CORS or network blocks in the browser"""
+    q = (q or "").strip()[:80]
+    if len(q) < 2:
+        return {"_embedded": {"city:search-results": []}}
     try:
-        url = f"https://api.teleport.org/api/cities/?search={q}"
-        resp = requests.get(url, timeout=5)
+        resp = requests.get("https://api.teleport.org/api/cities/", params={"search": q}, timeout=5)
+        resp.raise_for_status()
         return resp.json()
-    except Exception as e:
+    except requests.RequestException:
         return {"_embedded": {"city:search-results": []}}
 
 @app.post("/api/autofill-job-link")
 def autofill_job_link(req: AutofillRequest, current_user: User = Depends(get_current_user)):
     url = (req.url or "").strip()
-    if not url.startswith("http"):
-        raise HTTPException(status_code=400, detail="Enter a valid job URL")
     return scrape_job_posting(url)
 
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, current_user: User = Depends(get_current_user)):
     if not current_user.enc_rapid_key:
         raise HTTPException(status_code=400, detail="Add RapidAPI Key in Settings first")
+    jobType = (jobType or "").strip().upper()
+    datePosted = (datePosted or "").strip()
+    if jobType not in VALID_JOB_TYPES:
+        raise HTTPException(status_code=400, detail="Invalid job type")
+    if datePosted not in VALID_DATE_POSTED:
+        raise HTTPException(status_code=400, detail="Invalid date filter")
     
-    user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    try:
+        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    except InvalidToken:
+        raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
+
     url = "https://jsearch.p.rapidapi.com/search"
     params = {
-        "query": f"{query} in {location}",
+        "query": f"{query.strip()[:120]} in {location.strip()[:120]}",
         "page": "1",
         "num_pages": "1",
         "date_posted": datePosted,
@@ -868,6 +1035,10 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, curren
                 "desc": j.get("job_description", "")
             })
         return results
+    except HTTPException:
+        raise
+    except requests.RequestException as e:
+        raise HTTPException(status_code=502, detail=f"RapidAPI request failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -996,7 +1167,8 @@ def get_subs(current_user: User = Depends(get_current_user), db: Session = Depen
 
 @app.post("/api/subscriptions")
 def add_sub(sub: SubscriptionCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    new_sub = SearchSubscription(**sub.dict(), user_id=current_user.id)
+    payload = normalize_subscription_payload(sub)
+    new_sub = SearchSubscription(**payload, user_id=current_user.id)
     db.add(new_sub)
     db.commit()
     db.refresh(new_sub)
@@ -1015,7 +1187,11 @@ def run_hunter(current_user: User = Depends(get_current_user), db: Session = Dep
     if not current_user.enc_rapid_key:
         raise HTTPException(status_code=400, detail="Add RapidAPI Key in Settings first")
     
-    user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    try:
+        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
+    except InvalidToken:
+        raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
+
     subs = db.query(SearchSubscription).filter(SearchSubscription.user_id == current_user.id).all()
     
     if not subs:
@@ -1025,6 +1201,8 @@ def run_hunter(current_user: User = Depends(get_current_user), db: Session = Dep
     new_jobs_count = 0
 
     for sub in subs:
+        if sub.job_type not in VALID_JOB_TYPES:
+            continue
         url = "https://jsearch.p.rapidapi.com/search"
         params = {"query": f"{sub.query} in {sub.location}", "page": "1", "num_pages": "1", "date_posted": "week", "employment_types": sub.job_type}
         headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}

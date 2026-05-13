@@ -126,7 +126,7 @@ Backend:
 - PyJWT
 - cryptography
 - requests
-- google-generativeai
+- google-genai
 
 ## Local Development
 
@@ -146,6 +146,8 @@ pip install -r requirements.txt
 uvicorn main:app --reload
 ```
 
+Use Python 3.10+ for backend deployments. `Backend/runtime.txt` pins Python 3.11 for hosts that support runtime files.
+
 ## Environment
 
 ### Backend
@@ -154,19 +156,23 @@ Required:
 
 - `JWT_SECRET`
 - `ENCRYPTION_KEY`
+- `DATABASE_URL` for production
 
 Optional:
 
-- `DATABASE_URL`
+- `APP_ENV`
 - `FRONTEND_URL`
+- `CORS_ORIGINS`
 - `STRIPE_SECRET_KEY`
 - `STRIPE_WEBHOOK_SECRET`
 - `STRIPE_PRO_MONTHLY_PRICE_ID`
 - `STRIPE_LIFETIME_PRICE_ID`
 
-If `DATABASE_URL` is not set, the backend falls back to a local SQLite database.
+If `DATABASE_URL` is not set, the backend falls back to a local SQLite database for development. Use Postgres or another managed SQL database in production.
 
-Stripe Checkout uses Dashboard-managed payment methods. In Stripe, create one recurring monthly Price and one one-time lifetime Price, put those Price IDs in the backend environment, then enable the payment methods you want in the Stripe Dashboard payment method settings. Do not add the Stripe secret key to the frontend.
+Stripe Checkout uses Dashboard-managed payment methods. In Stripe, create one recurring monthly Price and one one-time lifetime Price, put those Price IDs in the backend environment, then enable the payment methods you want in the Stripe Dashboard payment method settings. Configure a webhook endpoint at `/api/billing/webhook` and subscribe to Checkout, subscription, and invoice payment events. Do not add the Stripe secret key to the frontend.
+
+The backend exposes `/api/health` for deployment checks. It reports database reachability and whether Stripe environment variables are configured without exposing secret values.
 
 ### Frontend
 

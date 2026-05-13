@@ -29,9 +29,9 @@ const tiers = {
       highlight: true,
       points: [
         "Everything in Free",
-        "Built-in AI credits so setup feels instant",
-        "Shared live job search quota without user-owned keys",
-        "Priority feature access and smoother onboarding",
+        "Support continued product development",
+        "Priority access to future premium workflow upgrades",
+        "Keep using optional AI and search with your own keys today",
       ],
     },
     {
@@ -46,7 +46,7 @@ const tiers = {
       points: [
         "One payment, permanent access",
         "Best fit for students who do not want subscriptions",
-        "Future paid tracker upgrades included",
+        "Future paid tracker workflow upgrades included",
       ],
     },
   ],
@@ -77,9 +77,9 @@ const tiers = {
       highlight: false,
       points: [
         "Everything in Free",
-        "Built-in AI credits so setup feels instant",
-        "Shared live job search quota without user-owned keys",
-        "Priority feature access and smoother onboarding",
+        "Support continued product development",
+        "Priority access to future premium workflow upgrades",
+        "Keep using optional AI and search with your own keys today",
       ],
     },
     {
@@ -94,7 +94,7 @@ const tiers = {
       points: [
         "One payment, permanent access",
         "Best fit for students who do not want subscriptions",
-        "Future paid tracker upgrades included",
+        "Future paid tracker workflow upgrades included",
         "Strongest value if you want a premium version later",
       ],
     },
@@ -127,7 +127,7 @@ export default function PricingPage({ startCheckout, checkoutLoading }) {
               </div>
               <h2 style={{ fontSize: 30, lineHeight: 1.1, marginBottom: 10 }}>Simple pricing for students</h2>
               <p style={{ color: "var(--txt2)", maxWidth: 640, lineHeight: 1.7 }}>
-                Keep the tracker free, upgrade later if you want built-in AI and search without bringing your own keys. Monthly stays lightweight. Lifetime lets you own the premium version outright.
+                Keep the tracker free, upgrade later if you want to support development and get future premium workflow upgrades. Optional AI and search use your own keys today.
               </p>
             </div>
 
@@ -206,7 +206,7 @@ export default function PricingPage({ startCheckout, checkoutLoading }) {
         <h3 style={{ marginBottom: 14 }}>Recommended release positioning</h3>
         <div style={{ display: "grid", gap: 10, color: "var(--txt2)", fontSize: 13, lineHeight: 1.7 }}>
           <div>Free: core tracker forever, optional bring-your-own-key AI.</div>
-          <div>Pro Monthly: built-in convenience for users who do not want setup friction.</div>
+          <div>Pro Monthly: support development and get future premium workflow upgrades.</div>
           <div>Lifetime: strongest pitch for students who prefer one payment over a subscription.</div>
         </div>
       </div>

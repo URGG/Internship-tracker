@@ -30,7 +30,7 @@ const pricingPlans = [
   {
     name: "Pro",
     price: "$9/mo",
-    detail: "Built-in AI and search convenience without managing your own keys.",
+    detail: "Support development and get future premium workflow upgrades.",
     action: "Choose monthly",
     id: "pro_monthly",
   },
@@ -153,7 +153,7 @@ export default function LandingPage({ onStart, onLogin, onOpenApp, onCheckout, c
         <div>
           <span className="landing-kicker">Pricing</span>
           <h2>Start free. Upgrade only if convenience is worth it.</h2>
-          <p>The tracker, analytics, reminders, and exports stay free. Paid plans are for built-in AI and search without managing your own keys.</p>
+          <p>The tracker, analytics, reminders, and exports stay free. Optional AI and search use your own keys today. Paid plans support development and future premium upgrades.</p>
         </div>
         <div className="landing-price-grid">
           {pricingPlans.map((plan) => (

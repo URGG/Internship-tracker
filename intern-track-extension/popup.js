@@ -126,7 +126,7 @@ document.addEventListener('DOMContentLoaded', async() => {
             });
 
             if (response.ok) {
-                saveBtn.innerText = "Saved ✓";
+                saveBtn.innerText = "Saved";
                 statusDiv.innerText = "Successfully added!";
                 setTimeout(() => window.close(), 1200);
             } else {
