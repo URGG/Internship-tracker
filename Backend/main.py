@@ -6,7 +6,7 @@ import re
 from html import unescape
 from ipaddress import ip_address
 from socket import getaddrinfo
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import OAuth2PasswordBearer
@@ -438,6 +438,43 @@ def model_to_dict(model: BaseModel):
         return model.model_dump()
     return model.dict()
 
+TRACKING_QUERY_PREFIXES = ("utm_",)
+TRACKING_QUERY_KEYS = {
+    "fbclid", "gclid", "gbraid", "wbraid", "mc_cid", "mc_eid", "igshid",
+    "ref", "ref_src", "source", "src", "campaign", "trk", "li_fat_id",
+}
+
+def normalize_spaces(value: Optional[str]) -> str:
+    return re.sub(r"\s+", " ", (value or "").strip()).lower()
+
+def normalize_job_link(value: Optional[str]) -> Optional[str]:
+    raw = (value or "").strip()
+    if not raw:
+        return None
+
+    parsed = urlparse(raw)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        return raw
+
+    scheme = parsed.scheme.lower()
+    netloc = parsed.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+
+    path = re.sub(r"/+", "/", parsed.path or "/")
+    if path != "/":
+        path = path.rstrip("/")
+
+    query_items = []
+    for key, value in parse_qsl(parsed.query, keep_blank_values=True):
+        lowered_key = key.lower()
+        if lowered_key in TRACKING_QUERY_KEYS or any(lowered_key.startswith(prefix) for prefix in TRACKING_QUERY_PREFIXES):
+            continue
+        query_items.append((lowered_key, value))
+
+    query = urlencode(sorted(query_items))
+    return urlunparse((scheme, netloc, path, "", query, ""))
+
 def normalize_job_payload(job: JobCreate):
     payload = model_to_dict(job)
     payload["company"] = payload["company"].strip()
@@ -461,6 +498,7 @@ def normalize_job_payload(job: JobCreate):
         if payload.get(key) == "":
             payload[key] = None
 
+    payload["link"] = normalize_job_link(payload.get("link"))
     payload["activity_log"] = payload.get("activity_log") or None
 
     return payload
@@ -481,27 +519,54 @@ def find_duplicate_job(db: Session, user_id: int, payload: dict, ignore_job_id: 
     if ignore_job_id is not None:
         query = query.filter(JobApplication.id != ignore_job_id)
 
+    normalized_link = normalize_job_link(payload.get("link"))
     if payload.get("link"):
-        duplicate = query.filter(JobApplication.link == payload["link"]).first()
-        if duplicate:
-            return duplicate
+        for candidate in query.filter(JobApplication.link.isnot(None)).all():
+            if normalize_job_link(candidate.link) == normalized_link:
+                return candidate
 
-    normalized_company = payload["company"].lower()
-    normalized_role = payload["role"].lower()
-    candidates = query.filter(JobApplication.company == payload["company"], JobApplication.role == payload["role"]).all()
-    for candidate in candidates:
-        if candidate.company.lower() == normalized_company and candidate.role.lower() == normalized_role:
+    normalized_company = normalize_spaces(payload["company"])
+    normalized_role = normalize_spaces(payload["role"])
+    for candidate in query.all():
+        if normalize_spaces(candidate.company) == normalized_company and normalize_spaces(candidate.role) == normalized_role:
             return candidate
     return None
 
 def job_identity_changed(existing_job: JobApplication, payload: dict) -> bool:
-    existing_link = (existing_job.link or "").strip()
-    next_link = (payload.get("link") or "").strip()
+    existing_link = normalize_job_link(existing_job.link) or ""
+    next_link = normalize_job_link(payload.get("link")) or ""
     return (
         existing_link != next_link
-        or existing_job.company.strip().lower() != payload["company"].strip().lower()
-        or existing_job.role.strip().lower() != payload["role"].strip().lower()
+        or normalize_spaces(existing_job.company) != normalize_spaces(payload["company"])
+        or normalize_spaces(existing_job.role) != normalize_spaces(payload["role"])
     )
+
+def duplicate_audit_for_user(db: Session, user_id: int):
+    by_identity = {}
+    for job in db.query(JobApplication).filter(JobApplication.user_id == user_id).all():
+        link_key = normalize_job_link(job.link)
+        identity = ("link", link_key) if link_key else ("company_role", normalize_spaces(job.company), normalize_spaces(job.role))
+        by_identity.setdefault(identity, []).append(job)
+
+    duplicates = []
+    for identity, jobs in by_identity.items():
+        if len(jobs) < 2:
+            continue
+        duplicates.append({
+            "identity": list(identity),
+            "count": len(jobs),
+            "jobs": [
+                {
+                    "id": job.id,
+                    "company": job.company,
+                    "role": job.role,
+                    "status": job.status,
+                    "link": job.link,
+                }
+                for job in jobs
+            ],
+        })
+    return duplicates
 
 def normalize_plan(plan: Optional[str]) -> str:
     plan_value = (plan or "free").lower()
@@ -1061,6 +1126,10 @@ async def stripe_webhook(request: Request, db: Session = Depends(get_db)):
 @app.get("/api/jobs")
 def get_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(JobApplication).filter(JobApplication.user_id == current_user.id).all()
+
+@app.get("/api/jobs/duplicates")
+def get_duplicate_jobs(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return duplicate_audit_for_user(db, current_user.id)
 
 @app.post("/api/jobs")
 def create_job(job: JobCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
