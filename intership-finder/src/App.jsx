@@ -807,16 +807,21 @@ export default function App() {
     if (!requireAuth() || movingJobId == null || movingJobId === "") return;
     const targetJob = apps.find((x) => String(x.id) === String(movingJobId));
     if (!targetJob) return;
+    if (targetJob.status === status) {
+      setDragId(null);
+      setDragOver(null);
+      return;
+    }
 
     const previousJob = normalizeApp(targetJob);
-    const nextPayload = {
+    const nextJob = {
       ...previousJob,
       status,
       applied_date: status === "Applied" && !previousJob.applied_date ? new Date().toISOString().slice(0, 10) : previousJob.applied_date,
     };
-    const payload = jobPayload(nextPayload);
+    const payload = jobPayload(nextJob);
 
-    setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? normalizeApp(payload) : x)));
+    setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? normalizeApp(nextJob) : x)));
     setDragId(null);
     setDragOver(null);
     toast(`Moved to ${status}`, "#5b7fff");
@@ -830,6 +835,11 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Failed to sync drag with database");
       setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? normalizeApp(data) : x)));
+      const jobsRes = await fetch(`${API_BASE}/jobs`, { headers: authHeaders });
+      if (jobsRes.ok) {
+        const jobsData = await jobsRes.json();
+        if (Array.isArray(jobsData)) setApps(jobsData.map(normalizeApp));
+      }
     } catch (e) {
       setApps((a) => a.map((x) => (String(x.id) === String(movingJobId) ? previousJob : x)));
       toast(e.message || "Failed to sync drag with database", "#f87171");
