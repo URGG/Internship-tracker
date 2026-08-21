@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 
-const Heatmap = ({ apps }) => {
+const Heatmap = ({ apps, activityDays }) => {
   const { grid, months } = useMemo(() => {
     const today = new Date();
     const startDate = new Date();
@@ -11,11 +11,17 @@ const Heatmap = ({ apps }) => {
     startDate.setDate(startDate.getDate() - dayOfWeek);
 
     const dateMap = {};
-    apps.forEach(app => {
-      if (app.applied_date) {
-        dateMap[app.applied_date] = (dateMap[app.applied_date] || 0) + 1;
-      }
-    });
+    if (Array.isArray(activityDays)) {
+      activityDays.forEach((entry) => {
+        dateMap[entry.date] = entry.count || 0;
+      });
+    } else {
+      apps.forEach(app => {
+        if (app.status !== "To Do" && app.applied_date) {
+          dateMap[app.applied_date] = (dateMap[app.applied_date] || 0) + 1;
+        }
+      });
+    }
 
     const grid = [];
     const months = [];
@@ -43,7 +49,7 @@ const Heatmap = ({ apps }) => {
     }
 
     return { grid, months };
-  }, [apps]);
+  }, [activityDays, apps]);
 
   const getColor = (level) => {
     switch (level) {
@@ -94,7 +100,7 @@ const Heatmap = ({ apps }) => {
             {grid.map((day, i) => (
               <div 
                 key={i} 
-                title={`${day.date}: ${day.count} applications`}
+                title={`${day.date}: ${day.count} activity event${day.count === 1 ? "" : "s"}`}
                 style={{ 
                   width: '11px', 
                   height: '11px', 

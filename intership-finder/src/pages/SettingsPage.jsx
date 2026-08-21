@@ -1,9 +1,10 @@
 import React, { useRef, useState } from "react";
 import * as pdfjsLib from "pdfjs-dist";
+import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import Autocomplete from "../components/shared/Autocomplete";
 import Icon from "../components/shared/Icon";
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
 export default function SettingsPage({
   rKey,
@@ -25,18 +26,59 @@ export default function SettingsPage({
   billing,
   onExportCsv,
   onExportJson,
+  onImportJson,
   toast,
+  workspaces,
+  activeWorkspaceId,
+  activeWorkspace,
+  selectWorkspace,
+  createWorkspace,
+  workspaceMembers,
+  addWorkspaceMember,
+  createWorkspaceInvite,
+  updateWorkspaceMember,
+  removeWorkspaceMember,
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
   const fileInputRef = useRef(null);
+  const backupInputRef = useRef(null);
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [memberIdentifier, setMemberIdentifier] = useState("");
+  const [memberRole, setMemberRole] = useState("member");
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviteRole, setInviteRole] = useState("member");
+  const [lastInviteUrl, setLastInviteUrl] = useState("");
+  const [workspaceAction, setWorkspaceAction] = useState("");
   const planLabel = billing?.plan ? billing.plan.charAt(0).toUpperCase() + billing.plan.slice(1) : "Free";
   const aiLimit = billing?.ai_monthly_limit || 0;
   const aiUsed = billing?.ai_used_this_month || 0;
   const aiRemaining = billing?.ai_remaining_this_month || 0;
+  const productUsage = billing?.usage?.product || {};
+  const usageRows = [
+    ["Applications added", productUsage.application_created || 0],
+    ["Applications updated", productUsage.application_updated || 0],
+    ["Job searches", productUsage.job_search || 0],
+    ["Hunter runs", productUsage.hunter_run || 0],
+    ["Hunter jobs added", productUsage.hunter_jobs_added || 0],
+    ["Restored records", productUsage.json_restore || 0],
+  ];
+  const canManageWorkspace = ["owner", "admin"].includes(activeWorkspace?.role);
+
+  const runWorkspaceAction = async (key, action, successMessage) => {
+    setWorkspaceAction(key);
+    try {
+      await action();
+      if (successMessage) toast?.(successMessage, "#34d399");
+    } catch (error) {
+      toast?.(error.message || "Workspace action failed", "#f87171");
+    } finally {
+      setWorkspaceAction("");
+    }
+  };
 
   const processResumeFile = async (file) => {
-    if (!file || file.type !== "application/pdf") {
+    if (!file || (file.type !== "application/pdf" && !file.name?.toLowerCase().endsWith(".pdf"))) {
       toast?.("Please choose a valid PDF file", "#fbbf24");
       return;
     }
@@ -53,7 +95,13 @@ export default function SettingsPage({
         extractedText += `${textContent.items.map((item) => item.str).join(" ")}\n\n`;
       }
 
-      setResumeTxt(extractedText.trim());
+      const cleanedText = extractedText.trim();
+      const wasTrimmed = cleanedText.length > 30000;
+      setResumeTxt(cleanedText.slice(0, 30000));
+      if (wasTrimmed) {
+        toast?.("Resume text was trimmed to 30,000 characters", "#fbbf24");
+        return;
+      }
       toast?.("Resume text extracted", "#34d399");
     } catch {
       toast?.("Failed to read the PDF. Make sure it is a text-based PDF.", "#f87171");
@@ -86,6 +134,115 @@ export default function SettingsPage({
       </div>
 
       <div className="scard">
+        <h3>Workspace</h3>
+        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 14 }}>
+          Keep applications, saved hunts, usage, and analytics together for a team. You can switch workspaces from the top bar.
+        </p>
+        <div className="srow" style={{ alignItems: "center" }}>
+          <label>Active workspace</label>
+          <select className="finp" value={activeWorkspaceId} onChange={(event) => selectWorkspace(event.target.value)}>
+            {workspaces.map((workspace) => <option key={workspace.id} value={workspace.id}>{workspace.name}</option>)}
+          </select>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+          <input className="finp" value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="New workspace name" style={{ flex: "1 1 220px" }} />
+          <button
+            className="mbtn"
+            disabled={!workspaceName.trim() || workspaceAction === "create"}
+            onClick={() => runWorkspaceAction("create", async () => {
+              await createWorkspace(workspaceName.trim());
+              setWorkspaceName("");
+            })}
+          >
+            {workspaceAction === "create" ? "Creating..." : "Create workspace"}
+          </button>
+        </div>
+
+        <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--b0)" }}>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
+            <div style={{ fontSize: 11, color: "var(--txt3)", textTransform: "uppercase", letterSpacing: ".08em" }}>Members</div>
+            <span style={{ fontSize: 11, color: "var(--txt3)" }}>{activeWorkspace?.member_count || workspaceMembers.length} active</span>
+          </div>
+          <div style={{ display: "grid", gap: 7 }}>
+            {workspaceMembers.map((member) => (
+              <div key={member.user_id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 10px", border: "1px solid var(--b0)", borderRadius: "var(--r)", background: "var(--s2)" }}>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {member.username}{member.is_current_user ? " · you" : ""}
+                  </div>
+                  {member.email && <div style={{ fontSize: 11, color: "var(--txt3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{member.email}</div>}
+                </div>
+                <select
+                  className="finp"
+                  value={member.role}
+                  disabled={!canManageWorkspace || member.role === "owner" || workspaceAction === `role-${member.user_id}`}
+                  onChange={(event) => runWorkspaceAction(`role-${member.user_id}`, () => updateWorkspaceMember(member.user_id, event.target.value))}
+                  style={{ width: 110, height: 32, padding: "0 8px" }}
+                >
+                  <option value="owner">Owner</option>
+                  <option value="admin">Admin</option>
+                  <option value="member">Member</option>
+                  <option value="viewer">Viewer</option>
+                </select>
+                {canManageWorkspace && member.role !== "owner" && (
+                  <button className="closex" title="Remove member" disabled={workspaceAction === `remove-${member.user_id}`} onClick={() => runWorkspaceAction(`remove-${member.user_id}`, () => removeWorkspaceMember(member.user_id))}>
+                    <Icon name="close" size={15} />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {canManageWorkspace && (
+          <>
+            <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap" }}>
+              <input className="finp" value={memberIdentifier} onChange={(event) => setMemberIdentifier(event.target.value)} placeholder="Existing username or email" style={{ flex: "1 1 220px" }} />
+              <select className="finp" value={memberRole} onChange={(event) => setMemberRole(event.target.value)} style={{ width: 110 }}>
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button
+                className="mbtn"
+                disabled={!memberIdentifier.trim() || workspaceAction === "add"}
+                onClick={() => runWorkspaceAction("add", async () => {
+                  await addWorkspaceMember(memberIdentifier.trim(), memberRole);
+                  setMemberIdentifier("");
+                })}
+              >
+                {workspaceAction === "add" ? "Adding..." : "Add member"}
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap" }}>
+              <input className="finp" type="email" value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="Invite by email" style={{ flex: "1 1 220px" }} />
+              <select className="finp" value={inviteRole} onChange={(event) => setInviteRole(event.target.value)} style={{ width: 110 }}>
+                <option value="member">Member</option>
+                <option value="admin">Admin</option>
+                <option value="viewer">Viewer</option>
+              </select>
+              <button
+                className="mbtn mbtn-p"
+                disabled={!inviteEmail.trim() || workspaceAction === "invite"}
+                onClick={() => runWorkspaceAction("invite", async () => {
+                  const invitation = await createWorkspaceInvite(inviteEmail.trim(), inviteRole);
+                  setLastInviteUrl(invitation.invite_url);
+                  setInviteEmail("");
+                })}
+              >
+                {workspaceAction === "invite" ? "Creating..." : "Create invite"}
+              </button>
+            </div>
+            {lastInviteUrl && (
+              <div className="note" style={{ marginTop: 10, wordBreak: "break-all" }}>
+                Invite link: <span style={{ color: "var(--txt)" }}>{lastInviteUrl}</span>
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
+      <div className="scard">
         <h3>Plan and AI Usage</h3>
         <p style={{ fontSize: 12, color: "var(--txt2)", marginBottom: 12 }}>
           Current plan: <strong style={{ color: "var(--txt)" }}>{planLabel}</strong>
@@ -100,6 +257,19 @@ export default function SettingsPage({
             Built-in AI is included on Pro and Lifetime. Free users can still add a Gemini key below.
           </div>
         )}
+        <div style={{ marginTop: 16, paddingTop: 14, borderTop: "1px solid var(--b0)" }}>
+          <div style={{ fontSize: 11, color: "var(--txt3)", textTransform: "uppercase", letterSpacing: ".08em", marginBottom: 9 }}>
+            Activity this month {billing?.usage_period ? `· ${billing.usage_period}` : ""}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+            {usageRows.map(([label, value]) => (
+              <div key={label} style={{ background: "var(--s2)", border: "1px solid var(--b0)", borderRadius: "var(--r)", padding: "10px 12px" }}>
+                <div style={{ color: "var(--txt3)", fontSize: 10, marginBottom: 5 }}>{label}</div>
+                <div style={{ fontSize: 17, fontWeight: 700 }}>{value}</div>
+              </div>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="scard">
@@ -128,10 +298,21 @@ export default function SettingsPage({
 
       <div className="scard">
         <h3>Backup and Export</h3>
-        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Export a spreadsheet for analysis or a JSON backup you can restore later.</p>
+        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16 }}>Export a spreadsheet, or restore an intern.track JSON backup without re-entering everything.</p>
         <div style={{ display: "flex", gap: "10px", flexWrap: "wrap" }}>
           <button className="mbtn" onClick={onExportCsv}>Export CSV</button>
           <button className="mbtn mbtn-p" onClick={onExportJson}>Backup JSON</button>
+          <input
+            ref={backupInputRef}
+            type="file"
+            accept="application/json,.json"
+            onChange={(event) => {
+              onImportJson(event.target.files?.[0]);
+              event.target.value = "";
+            }}
+            style={{ display: "none" }}
+          />
+          <button className="mbtn" onClick={() => backupInputRef.current?.click()}>Restore JSON</button>
         </div>
       </div>
 
@@ -186,7 +367,7 @@ export default function SettingsPage({
           )}
         </div>
 
-        <textarea className="finp fta" placeholder="Or paste your text manually here..." value={resumeTxt} onChange={(e) => setResumeTxt(e.target.value)} style={{ width: "100%", minHeight: "150px" }} />
+        <textarea className="finp fta" placeholder="Or paste your text manually here..." value={resumeTxt} onChange={(e) => setResumeTxt(e.target.value.slice(0, 30000))} style={{ width: "100%", minHeight: "150px" }} />
       </div>
 
       <div className="scard">

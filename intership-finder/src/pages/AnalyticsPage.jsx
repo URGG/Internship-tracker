@@ -3,8 +3,8 @@ import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, BarChart, 
 import Heatmap from "../components/shared/Heatmap";
 import { daysBetween } from "../utils/helpers";
 
-export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
-  const stats = useMemo(() => {
+export default function AnalyticsPage({ apps, serverAnalytics, onExportCsv, onExportJson }) {
+  const localStats = useMemo(() => {
     if (!apps || apps.length === 0) return null;
     const now = new Date();
     const weekStart = new Date(now);
@@ -12,7 +12,8 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
     weekStart.setDate(weekStart.getDate() - 6);
 
     const total = apps.length;
-    const applied = apps.filter((a) => a.applied_date).length;
+    const submittedApps = apps.filter((a) => a.status !== "To Do" && a.applied_date);
+    const applied = submittedApps.length;
     const interviews = apps.filter((a) => a.status === "Interview").length;
     const offers = apps.filter((a) => a.status === "Offer").length;
     const responded = apps.filter((a) => a.last_contact_date || ["Interview", "Offer", "Rejected"].includes(a.status)).length;
@@ -20,12 +21,12 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
     const responseRate = applied > 0 ? ((responded / applied) * 100).toFixed(1) : "0.0";
     const offerRate = applied > 0 ? ((offers / applied) * 100).toFixed(1) : "0.0";
 
-    const responseDays = apps.map((app) => daysBetween(app.applied_date, app.last_contact_date)).filter((value) => value !== null);
+    const responseDays = submittedApps.map((app) => daysBetween(app.applied_date, app.last_contact_date)).filter((value) => value !== null);
     const avgDaysToResponse = responseDays.length > 0 ? (responseDays.reduce((sum, value) => sum + value, 0) / responseDays.length).toFixed(1) : "-";
 
     const dateMap = {};
     apps.forEach((app) => {
-      const d = app.applied_date || "Unknown";
+      const d = app.status !== "To Do" && app.applied_date ? app.applied_date : "Unknown";
       if (!dateMap[d]) dateMap[d] = 0;
       dateMap[d] += 1;
     });
@@ -71,7 +72,7 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
         const nextActionDate = app.next_action_date ? new Date(app.next_action_date) : null;
         const deadlineDate = app.deadline ? new Date(app.deadline) : null;
 
-        if (appliedDate && appliedDate >= weekStart) acc.applied += 1;
+        if (app.status !== "To Do" && appliedDate && appliedDate >= weekStart) acc.applied += 1;
         if (responseDate && responseDate >= weekStart) acc.responses += 1;
         if (nextActionDate && nextActionDate >= weekStart && nextActionDate <= now && !app.follow_up_sent) acc.followUpsDue += 1;
         if (deadlineDate && deadlineDate >= now && deadlineDate <= new Date(now.getTime() + 7 * 86400000)) acc.deadlinesSoon += 1;
@@ -88,8 +89,10 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
     const strongestChannel =
       Object.entries(weekly.channelMomentum).sort((a, b) => b[1] - a[1])[0]?.[0] || "No signal yet";
 
-    return { total, interviews, offers, responseRate, interviewRate, offerRate, avgDaysToResponse, timeline, funnel, sources, interviewStages, weekly: { ...weekly, strongestChannel } };
+    return { total, submitted: applied, responses: responded, interviews, offers, responseRate, interviewRate, offerRate, avgDaysToResponse, timeline, funnel, sources, interviewStages, weekly: { ...weekly, strongestChannel } };
   }, [apps]);
+
+  const stats = serverAnalytics || localStats;
 
   const COLORS = { "To Do": "#787774", Applied: "#5b7fff", Interview: "#fbbf24", Offer: "#34d399", Rejected: "#f87171" };
   const SOURCE_COLORS = ["#5b7fff", "#34d399", "#fbbf24", "#f472b6", "#a78bfa", "#38bdf8"];
@@ -109,6 +112,7 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
         <div>
           <h2 style={{ fontSize: "20px", marginBottom: "4px" }}>Pipeline Analytics</h2>
           <div style={{ color: "var(--txt3)", fontSize: "12px" }}>Response, interview, and offer performance across your internship search</div>
+          {serverAnalytics?.generated_at && <div style={{ color: "var(--txt3)", fontSize: "11px", marginTop: "5px" }}>Calculated from recorded activity · updated {new Date(serverAnalytics.generated_at).toLocaleString()}</div>}
         </div>
         <div style={{ display: "flex", gap: "8px" }}>
           <button className="mbtn" onClick={onExportCsv}>Export CSV</button>
@@ -118,7 +122,8 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: "16px", marginBottom: "32px" }}>
         {[
-          ["Total Applications", stats.total, "var(--txt)"],
+          ["Tracked Roles", stats.total, "var(--txt)"],
+          ["Submitted", stats.submitted ?? 0, "var(--acc2)"],
           ["Response Rate", `${stats.responseRate}%`, "var(--acc)"],
           ["Interview Rate", `${stats.interviewRate}%`, "var(--amb)"],
           ["Offer Rate", `${stats.offerRate}%`, "var(--grn)"],
@@ -156,7 +161,11 @@ export default function AnalyticsPage({ apps, onExportCsv, onExportJson }) {
 
       <div className="scard" style={{ marginBottom: "24px" }}>
         <h3>Application Activity</h3>
-        <Heatmap apps={apps} />
+        <Heatmap apps={apps} activityDays={serverAnalytics?.activityDays} />
+      </div>
+
+      <div className="note" style={{ marginBottom: "24px" }}>
+        Rates use submitted applications as the denominator. A response means a recorded contact date or a move into Interview, Offer, or Rejected.
       </div>
 
       <div className="scard" style={{ marginBottom: "24px" }}>

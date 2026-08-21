@@ -17,6 +17,7 @@ export default function SearchPage({
   jsErr,
   jsRes,
   jsAdded,
+  isTracked,
   addFromSearch,
   jobLinkUrl,
   setJobLinkUrl,
@@ -107,7 +108,7 @@ export default function SearchPage({
 
           {!jsLoad && !jsErr &&
             jsRes.map((r) => {
-              const added = jsAdded.has(r._id);
+              const added = jsAdded.has(r._id) || isTracked(r);
               return (
                 <div key={r._id} className="rcard">
                   <div className="rinfo">
@@ -121,11 +122,7 @@ export default function SearchPage({
                     </div>
                   </div>
                   <div className="racts">
-                    {r.link && (
-                      <a href={r.link} target="_blank" rel="noreferrer">
-                        <button className="rbtn"><Icon name="external" size={14} /> View</button>
-                      </a>
-                    )}
+                    {r.link && <a className="rbtn" href={r.link} target="_blank" rel="noreferrer"><Icon name="external" size={14} /> View</a>}
                     <button className={`rbtn ${added ? "rbtn-done" : "rbtn-add"}`} onClick={() => !added && addFromSearch(r)}>
                       {added ? "Saved" : "+ Save Lead"}
                     </button>

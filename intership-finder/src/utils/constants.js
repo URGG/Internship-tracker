@@ -1,6 +1,6 @@
 export const STATUSES = ["To Do", "Applied", "Interview", "Offer", "Rejected"];
 export const KCOLS = [...STATUSES];
-export const SOURCES = ["LinkedIn", "Indeed", "Handshake", "Search", "Auto-Hunter", "Other"];
+export const SOURCES = ["LinkedIn", "Indeed", "Handshake", "Search", "Auto-Hunter", "Extension", "Other"];
 export const INTERVIEW_STAGES = ["", "Online Assessment", "Recruiter Screen", "Technical", "Behavioral", "Final Round", "Take Home"];
 
 export const JOB_TYPES = [

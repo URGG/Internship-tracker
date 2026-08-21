@@ -1,7 +1,7 @@
-import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { getActionSignal, uid } from "./utils/helpers";
-import { API_BASE } from "./config";
+import { API_BASE, TURNSTILE_SITE_KEY } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import LandingPage from "./pages/LandingPage";
@@ -15,6 +15,7 @@ const Modal = lazy(() => import("./components/shared/Modal"));
 
 const APPS_CACHE_KEY = "appsCache";
 const SUBS_CACHE_KEY = "subsCache";
+const WORKSPACE_KEY = "activeWorkspaceId";
 const DEFAULT_BILLING = {
   plan: "free",
   subscription_status: "free",
@@ -26,6 +27,8 @@ const DEFAULT_BILLING = {
   ai_server_configured: false,
   has_user_gemini_key: false,
   ai_available: false,
+  usage_period: null,
+  usage: {},
 };
 
 const normalizeBool = (value) => value === true || value === "true" || value === 1;
@@ -66,17 +69,72 @@ const PanelFallback = ({ label = "Loading..." }) => (
 const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [user, setUser] = useState("");
+  const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
+  const [turnstileToken, setTurnstileToken] = useState("");
+  const turnstileRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    if (show) setIsSignUp(authIntent === "signup");
+    if (show) {
+      setIsSignUp(authIntent === "signup");
+      setUser("");
+      setEmail("");
+      setPass("");
+      setTurnstileToken("");
+      setShowPassword(false);
+      setError("");
+    }
   }, [show, authIntent]);
+
+  useEffect(() => {
+    if (!show) return undefined;
+    const handleKeyDown = (event) => {
+      if (event.key === "Escape" && !loading) setShow(false);
+    };
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [loading, setShow, show]);
+
+  useEffect(() => {
+    if (!show || !TURNSTILE_SITE_KEY || !turnstileRef.current) return undefined;
+    const renderWidget = () => {
+      if (!window.turnstile || !turnstileRef.current) return;
+      turnstileRef.current.innerHTML = "";
+      setTurnstileToken("");
+      window.turnstile.render(turnstileRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        action: isSignUp ? "signup" : "login",
+        callback: (token) => setTurnstileToken(token),
+        "expired-callback": () => setTurnstileToken(""),
+        "error-callback": () => setTurnstileToken(""),
+      });
+    };
+    if (window.turnstile) {
+      renderWidget();
+      return undefined;
+    }
+    const scriptId = "cloudflare-turnstile-script";
+    let script = document.getElementById(scriptId);
+    if (!script) {
+      script = document.createElement("script");
+      script.id = scriptId;
+      script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+    script.addEventListener("load", renderWidget);
+    return () => script.removeEventListener("load", renderWidget);
+  }, [isSignUp, show]);
 
   if (!show) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    setError("");
     setLoading(true);
     const endpoint = isSignUp ? "/signup" : "/login";
 
@@ -84,7 +142,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: user, password: pass }),
+        body: JSON.stringify({ username: user || null, email: isSignUp ? email : null, password: pass, turnstile_token: turnstileToken || null }),
       });
       const data = await res.json();
 
@@ -92,6 +150,9 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
 
       if (isSignUp) {
         toast("Account created! You can now log in.", "#34d399");
+        setUser(user || email);
+        setEmail("");
+        setPass("");
         setIsSignUp(false);
       } else {
         localStorage.setItem("token", data.access_token);
@@ -101,47 +162,66 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
         setShow(false);
       }
     } catch (err) {
+      setError(err.message || "Authentication failed");
       toast(err.message, "#f87171");
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   };
 
   return (
-    <div className="overlay">
-      <div className="modal" style={{ maxWidth: 400, padding: "32px 40px" }}>
-        <button className="closex" style={{ position: "absolute", top: 16, right: 16 }} onClick={() => setShow(false)}>
+    <div className="overlay" onMouseDown={(event) => event.target === event.currentTarget && !loading && setShow(false)}>
+      <div className="modal auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-title">
+        <button className="closex auth-close" type="button" aria-label="Close authentication dialog" onClick={() => !loading && setShow(false)}>
           <Icon name="close" size={18} />
         </button>
-        <div className="sb-logo" style={{ justifyContent: "center", marginBottom: 32 }}>
+        <div className="sb-logo auth-brand">
           <div className="sb-logo-mark"><Icon name="logo" size={16} strokeWidth={2} /></div>
           <div className="sb-logo-text">
             intern<span>.track</span>
           </div>
         </div>
 
-        <h2 style={{ textAlign: "center", marginBottom: 24 }}>{isSignUp ? "Create an Account" : "Welcome Back"}</h2>
+        <div className="auth-heading">
+          <div className="auth-kicker">{isSignUp ? "Set up your workspace" : "Your application workspace"}</div>
+          <h2 id="auth-title">{isSignUp ? "Create your account" : "Welcome back"}</h2>
+          <p>{isSignUp ? "Track applications, follow-ups, and opportunities in one focused space." : "Sign in to pick up where you left off."}</p>
+        </div>
 
-        <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+        <form onSubmit={handleSubmit} className="auth-form">
+          {isSignUp && (
+            <label className="frow" htmlFor="auth-email">
+              <span className="flbl">Email address</span>
+              <input id="auth-email" className="finp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" autoComplete="email" autoFocus />
+            </label>
+          )}
+          <label className="frow" htmlFor="auth-identifier">
+            <span className="flbl">{isSignUp ? <>Username <span className="auth-optional">optional</span></> : "Email or username"}</span>
+            <input id="auth-identifier" className="finp" value={user} onChange={(e) => setUser(e.target.value)} required={!isSignUp} placeholder={isSignUp ? "Choose a handle" : "you@example.com"} autoComplete="username" autoFocus={!isSignUp} />
+          </label>
           <div className="frow">
-            <span className="flbl">Username</span>
-            <input className="finp" value={user} onChange={(e) => setUser(e.target.value)} required placeholder="johndoe" />
+            <label className="flbl" htmlFor="auth-password">Password</label>
+            <span className="auth-password-field">
+              <input id="auth-password" className="finp" type={showPassword ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} required minLength={8} placeholder="At least 8 characters" autoComplete={isSignUp ? "new-password" : "current-password"} />
+              <button className="auth-password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </span>
           </div>
-          <div className="frow">
-            <span className="flbl">Password</span>
-            <input className="finp" type="password" value={pass} onChange={(e) => setPass(e.target.value)} required placeholder="********" />
-          </div>
-          <button className="mbtn mbtn-p" type="submit" disabled={loading} style={{ marginTop: 12, height: 40 }}>
-            {loading ? "Processing..." : isSignUp ? "Sign Up" : "Log In"}
+          {error && <div className="auth-error" id="auth-error" role="alert">{error}</div>}
+          {TURNSTILE_SITE_KEY && <div className="auth-turnstile" ref={turnstileRef} />}
+          <button className="mbtn mbtn-p auth-submit" type="submit" disabled={loading} aria-busy={loading}>
+            {loading ? "Signing you in..." : isSignUp ? "Create account" : "Sign in"}
           </button>
         </form>
 
-        <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: "var(--txt3)" }}>
+        <div className="auth-switch-row">
           {isSignUp ? "Have an account? " : "Need an account? "}
-          <span style={{ color: "var(--acc)", cursor: "pointer", fontWeight: 600 }} onClick={() => setIsSignUp(!isSignUp)}>
+          <button className="auth-switch" type="button" onClick={() => { setError(""); setIsSignUp(!isSignUp); }}>
             {isSignUp ? "Log in" : "Sign up"}
-          </span>
+          </button>
         </div>
+        <div className="auth-footnote">Core tracking is free. No credit card required.</div>
       </div>
     </div>
   );
@@ -213,6 +293,24 @@ export default function App() {
   const [hL, setHL] = useState("");
   const [hLoading, setHLoading] = useState(false);
   const [billing, setBilling] = useState(DEFAULT_BILLING);
+  const [analyticsData, setAnalyticsData] = useState(null);
+  const [workspaces, setWorkspaces] = useState([]);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(() => localStorage.getItem(WORKSPACE_KEY) || "");
+  const [workspaceMembers, setWorkspaceMembers] = useState([]);
+
+  const activeWorkspace = useMemo(
+    () => workspaces.find((workspace) => String(workspace.id) === String(activeWorkspaceId)) || null,
+    [activeWorkspaceId, workspaces]
+  );
+  const baseAuthHeaders = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
+  const authHeaders = useMemo(
+    () => ({
+      ...baseAuthHeaders,
+      "Content-Type": "application/json",
+      ...(activeWorkspaceId ? { "X-Workspace-ID": String(activeWorkspaceId) } : {}),
+    }),
+    [activeWorkspaceId, baseAuthHeaders]
+  );
 
   const toast = useCallback((msg, color = "#34d399") => {
     const id = uid();
@@ -230,10 +328,15 @@ export default function App() {
     localStorage.removeItem("username");
     localStorage.removeItem(APPS_CACHE_KEY);
     localStorage.removeItem(SUBS_CACHE_KEY);
+    localStorage.removeItem(WORKSPACE_KEY);
     setToken(null);
     setApps([]);
     setSubs([]);
     setBilling(DEFAULT_BILLING);
+    setAnalyticsData(null);
+    setWorkspaces([]);
+    setWorkspaceMembers([]);
+    setActiveWorkspaceId("");
   }, []);
 
   const refreshBilling = useCallback(async () => {
@@ -243,12 +346,12 @@ export default function App() {
     }
 
     try {
-      const res = await fetch(`${API_BASE}/billing/me`, { headers: { Authorization: `Bearer ${token}` } });
+      const res = await fetch(`${API_BASE}/billing/me`, { headers: authHeaders });
       if (res.ok) setBilling({ ...DEFAULT_BILLING, ...(await res.json()) });
     } catch {
       // Billing status is non-critical for the tracker workflow.
     }
-  }, [token]);
+  }, [authHeaders, token]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -272,8 +375,6 @@ export default function App() {
     localStorage.setItem(SUBS_CACHE_KEY, JSON.stringify(subs));
   }, [subs]);
 
-  const authHeaders = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
-
   const downloadFile = (filename, content, type) => {
     const blob = new Blob([content], { type });
     const url = URL.createObjectURL(blob);
@@ -286,6 +387,32 @@ export default function App() {
 
   const exportJobsJson = () => {
     downloadFile(`intern-track-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(apps, null, 2), "application/json");
+  };
+
+  const importJobsJson = async (file) => {
+    if (!requireAuth() || !file) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast("Backup file is too large", "#f87171");
+      return;
+    }
+
+    try {
+      const parsed = JSON.parse(await file.text());
+      const jobs = Array.isArray(parsed) ? parsed : parsed?.jobs || parsed?.applications;
+      if (!Array.isArray(jobs) || jobs.length === 0) throw new Error("Choose an intern.track JSON backup file");
+
+      const res = await fetch(`${API_BASE}/jobs/import`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({ jobs }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Restore failed");
+      if (Array.isArray(data.jobs)) setApps(data.jobs.map(normalizeApp));
+      toast(`Restored ${data.added} application${data.added === 1 ? "" : "s"}${data.skipped ? `; skipped ${data.skipped} duplicate${data.skipped === 1 ? "" : "s"}` : ""}`, "#34d399");
+    } catch (error) {
+      toast(error.message || "Restore failed", "#f87171");
+    }
   };
 
   const exportJobsCsv = () => {
@@ -313,13 +440,57 @@ export default function App() {
       setApps([]);
       setSubs([]);
       setBilling(DEFAULT_BILLING);
+      setWorkspaces([]);
+      setWorkspaceMembers([]);
+      setActiveWorkspaceId("");
       localStorage.removeItem(APPS_CACHE_KEY);
       localStorage.removeItem(SUBS_CACHE_KEY);
       return;
     }
 
-    const headers = { Authorization: `Bearer ${token}` };
-    Promise.all([fetch(`${API_BASE}/jobs`, { headers }), fetch(`${API_BASE}/subscriptions`, { headers }), fetch(`${API_BASE}/billing/me`, { headers })])
+    let cancelled = false;
+    fetch(`${API_BASE}/workspaces`, { headers: baseAuthHeaders })
+      .then(async (workspacesRes) => {
+        const data = await workspacesRes.json().catch(() => ({}));
+        if (workspacesRes.status === 401) {
+          clearAuthSession();
+          toast("Session expired. Please log in again.", "#fbbf24");
+          openAuth("login");
+          return;
+        }
+        if (!workspacesRes.ok) throw new Error(data.detail || "Workspace sync failed");
+        if (!Array.isArray(data)) throw new Error("Workspace sync returned an invalid response");
+        if (cancelled) return;
+        setWorkspaces(data);
+        const savedId = localStorage.getItem(WORKSPACE_KEY);
+        const selected = data.find((workspace) => String(workspace.id) === String(savedId)) || data[0];
+        if (selected) {
+          const selectedId = String(selected.id);
+          setActiveWorkspaceId(selectedId);
+          localStorage.setItem(WORKSPACE_KEY, selectedId);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) toast(`${error.message || "Workspace sync failed"}. Showing cached data.`, "#fbbf24");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseAuthHeaders, clearAuthSession, openAuth, token, toast]);
+
+  useEffect(() => {
+    if (!token || !activeWorkspaceId) return undefined;
+    let cancelled = false;
+    const readJson = async (response, label) => {
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.detail || `${label} sync failed`);
+      return data;
+    };
+    Promise.all([
+      fetch(`${API_BASE}/jobs`, { headers: authHeaders }),
+      fetch(`${API_BASE}/subscriptions`, { headers: authHeaders }),
+      fetch(`${API_BASE}/billing/me`, { headers: authHeaders }),
+    ])
       .then(async ([jobsRes, subsRes, billingRes]) => {
         if (jobsRes.status === 401 || subsRes.status === 401 || billingRes.status === 401) {
           clearAuthSession();
@@ -327,16 +498,184 @@ export default function App() {
           openAuth("login");
           return;
         }
-
-        const [jobsData, subsData, billingData] = await Promise.all([jobsRes.json(), subsRes.json(), billingRes.json()]);
+        const [jobsData, subsData, billingData] = await Promise.all([
+          readJson(jobsRes, "Application"),
+          readJson(subsRes, "Saved hunt"),
+          readJson(billingRes, "Billing"),
+        ]);
+        if (cancelled) return;
         if (Array.isArray(jobsData)) setApps(jobsData.map(normalizeApp));
         if (Array.isArray(subsData)) setSubs(subsData);
         if (billingData && typeof billingData === "object") setBilling({ ...DEFAULT_BILLING, ...billingData });
       })
-      .catch(() => {
-        toast("Using cached jobs while the backend wakes up", "#fbbf24");
+      .catch((error) => {
+        if (!cancelled) toast(`${error.message || "Backend sync failed"}. Showing cached data.`, "#fbbf24");
       });
-  }, [clearAuthSession, openAuth, token, toast]);
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, authHeaders, clearAuthSession, openAuth, token, toast]);
+
+  useEffect(() => {
+    if (!token || !activeWorkspaceId || page !== "settings") {
+      setWorkspaceMembers([]);
+      return undefined;
+    }
+    let cancelled = false;
+    fetch(`${API_BASE}/workspaces/${activeWorkspaceId}/members`, { headers: authHeaders })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "Member list sync failed");
+        if (!cancelled && Array.isArray(data)) setWorkspaceMembers(data);
+      })
+      .catch((error) => {
+        if (!cancelled) toast(error.message || "Member list sync failed", "#fbbf24");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, authHeaders, page, token, toast]);
+
+  useEffect(() => {
+    if (!token) return undefined;
+    const inviteToken = new URLSearchParams(window.location.search).get("invite");
+    if (!inviteToken) return undefined;
+    let cancelled = false;
+    fetch(`${API_BASE}/workspace-invitations/accept`, {
+      method: "POST",
+      headers: { ...baseAuthHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ token: inviteToken }),
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "Could not accept invitation");
+        if (cancelled) return;
+        setWorkspaces((current) => [...current.filter((workspace) => workspace.id !== data.id), data]);
+        setActiveWorkspaceId(String(data.id));
+        localStorage.setItem(WORKSPACE_KEY, String(data.id));
+        toast(`You joined ${data.name}`, "#34d399");
+        window.history.replaceState({}, "", window.location.pathname);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          toast(error.message || "Could not accept invitation", "#f87171");
+          window.history.replaceState({}, "", window.location.pathname);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseAuthHeaders, token, toast]);
+
+  const selectWorkspace = (workspaceId) => {
+    const nextId = String(workspaceId || "");
+    setActiveWorkspaceId(nextId);
+    setAnalyticsData(null);
+    setApps([]);
+    setSubs([]);
+    setWorkspaceMembers([]);
+    if (nextId) localStorage.setItem(WORKSPACE_KEY, nextId);
+    else localStorage.removeItem(WORKSPACE_KEY);
+  };
+
+  const createWorkspace = async (name) => {
+    const res = await fetch(`${API_BASE}/workspaces`, {
+      method: "POST",
+      headers: { ...baseAuthHeaders, "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Could not create workspace");
+    setWorkspaces((current) => [...current, data]);
+    selectWorkspace(data.id);
+    toast(`${data.name} is ready`, "#34d399");
+    return data;
+  };
+
+  const loadWorkspaceMembers = useCallback(async () => {
+    if (!activeWorkspaceId) return;
+    const res = await fetch(`${API_BASE}/workspaces/${activeWorkspaceId}/members`, { headers: authHeaders });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Member list sync failed");
+    if (Array.isArray(data)) setWorkspaceMembers(data);
+  }, [activeWorkspaceId, authHeaders]);
+
+  const addWorkspaceMember = async (identifier, role) => {
+    const res = await fetch(`${API_BASE}/workspaces/${activeWorkspaceId}/members`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ username: identifier, role }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Could not add member");
+    await loadWorkspaceMembers();
+    toast(`${data.username} added to the workspace`, "#34d399");
+    return data;
+  };
+
+  const createWorkspaceInvite = async (email, role) => {
+    const res = await fetch(`${API_BASE}/workspaces/${activeWorkspaceId}/invitations`, {
+      method: "POST",
+      headers: authHeaders,
+      body: JSON.stringify({ email, role }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Could not create invitation");
+    try {
+      await navigator.clipboard.writeText(data.invite_url);
+      toast("Invite link copied", "#34d399");
+    } catch {
+      toast("Invite created. Copy the link from the workspace panel.", "#fbbf24");
+    }
+    return data;
+  };
+
+  const updateWorkspaceMember = async (userId, role) => {
+    const res = await fetch(`${API_BASE}/workspaces/${activeWorkspaceId}/members/${userId}`, {
+      method: "PATCH",
+      headers: authHeaders,
+      body: JSON.stringify({ role }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Could not update member");
+    await loadWorkspaceMembers();
+    toast("Workspace role updated", "#34d399");
+    return data;
+  };
+
+  const removeWorkspaceMember = async (userId) => {
+    const res = await fetch(`${API_BASE}/workspaces/${activeWorkspaceId}/members/${userId}`, {
+      method: "DELETE",
+      headers: authHeaders,
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "Could not remove member");
+    await loadWorkspaceMembers();
+    toast("Member removed", "#8b91b8");
+    return data;
+  };
+
+  useEffect(() => {
+    if (!token || page !== "analytics") return undefined;
+    let cancelled = false;
+    fetch(`${API_BASE}/analytics`, { headers: authHeaders })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          clearAuthSession();
+          openAuth("login");
+          throw new Error("Session expired");
+        }
+        if (!res.ok) throw new Error(data.detail || "Analytics sync failed");
+        if (!cancelled) setAnalyticsData(data);
+      })
+      .catch((error) => {
+        if (!cancelled && error.message !== "Session expired") toast(error.message || "Analytics sync failed", "#fbbf24");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeWorkspaceId, apps, authHeaders, clearAuthSession, openAuth, page, token, toast]);
 
   useEffect(() => {
     if (token && page === "landing") setPage("tracker");
@@ -398,6 +737,11 @@ export default function App() {
         const jobsRes = await fetch(`${API_BASE}/jobs`, { headers: authHeaders });
         const jobsData = await jobsRes.json();
         setApps(jobsData.map(normalizeApp));
+      }
+
+      if (data.failures?.length) {
+        toast(`${data.added || 0} jobs added; ${data.failures.length} search(es) failed.`, "#fbbf24");
+      } else if (data.added > 0) {
         toast(`Found ${data.added} new jobs!`, "#34d399");
       } else {
         toast("No new jobs found today.", "#9b9a97");
@@ -948,8 +1292,23 @@ export default function App() {
                 Sign In / Sign Up
               </button>
             ) : (
-              <div style={{ marginLeft: "auto", fontSize: 13, color: "var(--txt3)" }}>
-                Logged in as <span style={{ color: "var(--txt)", fontWeight: 600 }}>{localStorage.getItem("username")}</span>
+              <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
+                {workspaces.length > 0 && (
+                  <select
+                    className="finp"
+                    value={activeWorkspaceId}
+                    onChange={(event) => selectWorkspace(event.target.value)}
+                    aria-label="Active workspace"
+                    style={{ minWidth: 150, height: 34, padding: "0 10px" }}
+                  >
+                    {workspaces.map((workspace) => (
+                      <option key={workspace.id} value={workspace.id}>{workspace.name}</option>
+                    ))}
+                  </select>
+                )}
+                <div style={{ fontSize: 13, color: "var(--txt3)" }}>
+                  {localStorage.getItem("username")} <span style={{ color: "var(--txt3)", fontSize: 11 }}>· {activeWorkspace?.role || "member"}</span>
+                </div>
               </div>
             )}
 
@@ -1004,6 +1363,7 @@ export default function App() {
                   jsErr={jsErr}
                   jsRes={jsRes}
                   jsAdded={jsAdded}
+                  isTracked={(result) => isDuplicate({ company: result.company, role: result.role, link: result.link })}
                   addFromSearch={saveSearchJob}
                   jobLinkUrl={jobLinkUrl}
                   setJobLinkUrl={setJobLinkUrl}
@@ -1014,7 +1374,7 @@ export default function App() {
             )}
             {page === "analytics" && (
               <Suspense fallback={<PanelFallback label="Loading analytics..." />}>
-                <AnalyticsPage apps={apps} onExportCsv={exportJobsCsv} onExportJson={exportJobsJson} />
+                <AnalyticsPage apps={apps} serverAnalytics={analyticsData} onExportCsv={exportJobsCsv} onExportJson={exportJobsJson} />
               </Suspense>
             )}
             {page === "pricing" && (
@@ -1044,7 +1404,18 @@ export default function App() {
                   billing={billing}
                   onExportCsv={exportJobsCsv}
                   onExportJson={exportJobsJson}
+                  onImportJson={importJobsJson}
                   toast={toast}
+                  workspaces={workspaces}
+                  activeWorkspaceId={activeWorkspaceId}
+                  activeWorkspace={activeWorkspace}
+                  selectWorkspace={selectWorkspace}
+                  createWorkspace={createWorkspace}
+                  workspaceMembers={workspaceMembers}
+                  addWorkspaceMember={addWorkspaceMember}
+                  createWorkspaceInvite={createWorkspaceInvite}
+                  updateWorkspaceMember={updateWorkspaceMember}
+                  removeWorkspaceMember={removeWorkspaceMember}
                 />
               </Suspense>
             )}

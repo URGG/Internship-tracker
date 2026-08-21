@@ -111,8 +111,7 @@ document.addEventListener('DOMContentLoaded', async() => {
             notes: descInput.value,
             link: tab.url,
             status: "To Do",
-            source: "Extension",
-            applied_date: new Date().toISOString().slice(0, 10)
+            source: "Extension"
         };
 
         try {
