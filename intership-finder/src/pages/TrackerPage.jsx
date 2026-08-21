@@ -68,7 +68,11 @@ export default function TrackerPage({
 
       {queueItems.length > 0 && (
         <div className="scard" style={{ marginBottom: "20px" }}>
-          <h3 style={{ marginBottom: "14px" }}>Smart Queue</h3>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "12px", marginBottom: "5px" }}>
+            <h3>Today's priorities</h3>
+            <span style={{ color: "var(--txt3)", fontSize: "11px", fontFamily: "var(--mono)" }}>{queueItems.length} action{queueItems.length === 1 ? "" : "s"}</span>
+          </div>
+          <div style={{ color: "var(--txt3)", fontSize: "12px", marginBottom: "14px" }}>Start at the top, then keep the rest of the pipeline moving.</div>
           <div style={{ display: "grid", gap: "10px" }}>
             {queueItems.slice(0, 6).map(({ app, signal }) => {
               const health = getApplicationHealth(app);

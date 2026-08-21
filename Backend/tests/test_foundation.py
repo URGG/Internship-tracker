@@ -1,5 +1,6 @@
 import os
 import sys
+import json
 
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./Backend/test-ci.db")
@@ -136,7 +137,7 @@ def test_api_records_events_and_exposes_authoritative_analytics():
     assert body["responseRate"] == "0.0"
 
 
-def test_workspace_members_share_only_the_selected_workspace():
+def test_workspace_members_share_only_the_selected_workspace(monkeypatch):
     db = SessionLocal()
     clear_database(db)
     db.close()
@@ -158,6 +159,36 @@ def test_workspace_members_share_only_the_selected_workspace():
         "company": "Shared Co", "role": "Product Intern", "status": "To Do", "source": "Referral",
     })
     assert created.status_code == 200
+    monkeypatch.setattr(__import__("main"), "generate_user_gemini_content", lambda *args, **kwargs: json.dumps({
+        "score": 84,
+        "summary": "Strong product and communication fit.",
+        "missing_keywords": ["experimentation"],
+        "tailored_bullets": ["Built a product prototype from user feedback."],
+        "cover_letter": "Dear Hiring Team,\nI am excited to apply.",
+        "application_answers": [{"question": "Why this role?", "answer": "I enjoy building useful products."}],
+        "interview_questions": [{"question": "Tell me about a project.", "focus": "Use a clear STAR story."}],
+        "next_actions": ["Review the missing keyword."],
+    }))
+    packet = client.post("/api/application-packet", headers=owner_scope, json={
+        "application_id": created.json()["id"],
+        "company": "Shared Co",
+        "role": "Product Intern",
+        "description": "Build products with users.",
+        "context": "Product and communication experience.",
+    })
+    assert packet.status_code == 200
+    assert packet.json()["score"] == 84
+    assert client.get("/api/jobs", headers=owner_scope).json()[0]["application_packet"]
+    member_workspace = client.get("/api/workspaces", headers=member_headers).json()[0]
+    member_scope = {**member_headers, "X-Workspace-ID": str(member_workspace["id"])}
+    blocked_packet = client.post("/api/application-packet", headers=member_scope, json={
+        "application_id": created.json()["id"],
+        "company": "Shared Co",
+        "role": "Product Intern",
+        "description": "Build products with users.",
+        "context": "Product and communication experience.",
+    })
+    assert blocked_packet.status_code == 404
     assert client.post("/api/workspaces/%s/members" % owner_workspace["id"], headers=owner_scope, json={"username": "member@example.com", "role": "member"}).status_code == 200
     invitation = client.post("/api/workspaces/%s/invitations" % owner_workspace["id"], headers=owner_scope, json={"email": "invited@example.com", "role": "viewer"})
     assert invitation.status_code == 200
@@ -179,6 +210,13 @@ def test_workspace_members_share_only_the_selected_workspace():
 
     member_id = next(member["user_id"] for member in client.get("/api/workspaces/%s/members" % owner_workspace["id"], headers=owner_scope).json() if member["username"] == "workspace-member")
     assert client.patch("/api/workspaces/%s/members/%s" % (owner_workspace["id"], member_id), headers=owner_scope, json={"role": "viewer"}).status_code == 200
+    assert client.post("/api/application-packet", headers=member_scope, json={
+        "application_id": created.json()["id"],
+        "company": "Shared Co",
+        "role": "Product Intern",
+        "description": "Build products with users.",
+        "context": "Product and communication experience.",
+    }).status_code == 403
     assert client.post("/api/jobs", headers=member_scope, json={
         "company": "Viewer Co", "role": "Research Intern", "status": "To Do", "source": "Referral",
     }).status_code == 403

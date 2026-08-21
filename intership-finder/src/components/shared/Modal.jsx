@@ -19,6 +19,12 @@ export default function Modal({
   coverLoad,
   coverOut,
   genCover,
+  openApplicationPacket,
+  packetJob,
+  setPacketJob,
+  packetData,
+  packetLoad,
+  runApplicationPacket,
   openCover,
   openResumeMatch,
   openFollowUp,
@@ -63,6 +69,9 @@ export default function Modal({
                   <>
                     <button className="ai-pill" onClick={() => fetchIntel(form)} title="Get AI Insights">
                       Intel
+                    </button>
+                    <button className="ai-pill" onClick={() => openApplicationPacket(form)} title="Build application packet">
+                      Packet
                     </button>
                     <button className="ai-pill" onClick={() => openCover(form)}>
                       AI Cover
@@ -324,6 +333,116 @@ export default function Modal({
                   Copy to Clipboard
                 </button>
               )}
+            </div>
+          </>
+        )}
+
+        {modal === "packet" && (
+          <>
+            <div className="mhead">
+              <div>
+                <h2>Application Packet</h2>
+                <div style={{ color: "var(--txt3)", fontSize: 11, marginTop: 4 }}>{form.role} · {form.company}</div>
+              </div>
+              <button className="closex" onClick={() => setModal("edit")}>
+                <Icon name="close" size={18} />
+              </button>
+            </div>
+
+            <div className="mbody">
+              <div className="note">
+                Build one job-specific packet: fit summary, truthful resume bullets, cover letter, application answers, interview questions, and next actions. The latest packet is saved to this application.
+              </div>
+
+              {!packetLoad && (
+                <div className="frow">
+                  <span className="flbl">Job Description</span>
+                  <textarea className="finp fta" value={packetJob} onChange={(e) => setPacketJob(e.target.value)} placeholder="Paste the full job description for a stronger packet..." style={{ minHeight: 130 }} />
+                </div>
+              )}
+
+              {packetLoad && (
+                <div className="ai-loading">
+                  <div className="spin" />
+                  Building your application packet...
+                </div>
+              )}
+
+              {packetData && !packetLoad && (
+                <div style={{ display: "grid", gap: 14 }}>
+                  <div className="scard" style={{ margin: 0, padding: 18, background: "var(--s3)" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "end" }}>
+                      <div>
+                        <div className="flbl" style={{ marginBottom: 6 }}>Fit score</div>
+                        <div style={{ fontSize: 34, fontWeight: 800 }}>{packetData.score}%</div>
+                      </div>
+                      <span className="tag t-li">Saved packet</span>
+                    </div>
+                    <div style={{ color: "var(--txt2)", fontSize: 13, lineHeight: 1.6, marginTop: 8 }}>{packetData.summary}</div>
+                  </div>
+
+                  <div className="fg2">
+                    <div className="scard" style={{ margin: 0, padding: 16 }}>
+                      <div className="flbl" style={{ marginBottom: 9 }}>Missing keywords</div>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {packetData.missing_keywords?.length ? packetData.missing_keywords.map((item) => <span key={item} className="tag t-warn">{item}</span>) : <span style={{ color: "var(--txt3)", fontSize: 12 }}>No obvious gaps found.</span>}
+                      </div>
+                    </div>
+                    <div className="scard" style={{ margin: 0, padding: 16 }}>
+                      <div className="flbl" style={{ marginBottom: 9 }}>Next actions</div>
+                      <ol style={{ paddingLeft: 18, display: "grid", gap: 6, color: "var(--txt2)", fontSize: 12, lineHeight: 1.5 }}>
+                        {packetData.next_actions?.map((item) => <li key={item}>{item}</li>)}
+                      </ol>
+                    </div>
+                  </div>
+
+                  <div className="scard" style={{ margin: 0, padding: 16 }}>
+                    <div className="flbl" style={{ marginBottom: 9 }}>Tailored resume bullets</div>
+                    <ul style={{ paddingLeft: 18, display: "grid", gap: 8, color: "var(--txt2)", fontSize: 13, lineHeight: 1.55 }}>
+                      {packetData.tailored_bullets?.map((item) => <li key={item}>{item}</li>)}
+                    </ul>
+                  </div>
+
+                  <div className="scard" style={{ margin: 0, padding: 16 }}>
+                    <div className="flbl" style={{ marginBottom: 9 }}>Cover letter</div>
+                    <div className="ai-out" style={{ whiteSpace: "pre-wrap" }}>{packetData.cover_letter}</div>
+                    <button className="mbtn" style={{ marginTop: 10 }} onClick={() => navigator.clipboard.writeText(packetData.cover_letter)}>Copy cover letter</button>
+                  </div>
+
+                  {packetData.application_answers?.length > 0 && (
+                    <div className="scard" style={{ margin: 0, padding: 16 }}>
+                      <div className="flbl" style={{ marginBottom: 9 }}>Application answers</div>
+                      <div style={{ display: "grid", gap: 12 }}>
+                        {packetData.application_answers.map((item) => (
+                          <div key={item.question}>
+                            <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 5 }}>{item.question}</div>
+                            <div style={{ color: "var(--txt2)", fontSize: 13, lineHeight: 1.55 }}>{item.answer}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="scard" style={{ margin: 0, padding: 16 }}>
+                    <div className="flbl" style={{ marginBottom: 9 }}>Interview prep</div>
+                    <div style={{ display: "grid", gap: 10 }}>
+                      {packetData.interview_questions?.map((item) => (
+                        <div key={item.question} style={{ borderBottom: "1px solid var(--b0)", paddingBottom: 9 }}>
+                          <div style={{ fontSize: 13, fontWeight: 700 }}>{item.question}</div>
+                          <div style={{ color: "var(--txt3)", fontSize: 11, marginTop: 4 }}>{item.focus}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="mfoot">
+              <button className="mbtn mbtn-g" onClick={() => setModal("edit")}>Back</button>
+              <button className="mbtn mbtn-p" onClick={runApplicationPacket} disabled={packetLoad || !resumeTxt}>
+                {packetLoad ? "Building..." : packetData ? "Refresh packet" : "Build packet"}
+              </button>
             </div>
           </>
         )}

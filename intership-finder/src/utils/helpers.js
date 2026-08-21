@@ -121,7 +121,16 @@ export function getActionSignal(app = {}) {
     };
   }
 
-  if (!terminal && appliedAge !== null && appliedAge >= 14 && !app.last_contact_date) {
+  if (app.status === "Interview" && !app.application_packet && (!app.notes || app.notes.trim().length < 20)) {
+    return {
+      score: 72,
+      label: "Prep interview",
+      detail: "Add notes and build an application packet",
+      cls: "t-soon",
+    };
+  }
+
+  if (!terminal && appliedAge !== null && appliedAge >= 10 && !app.last_contact_date) {
     return {
       score: 68,
       label: "Stale",

@@ -29,6 +29,7 @@ Optional extras include:
 - resume matching
 - follow-up drafting
 - company intel
+- application packets with fit scoring, truthful resume bullets, application answers, interview prep, and next actions
 
 Supabase currently provides the Postgres database only. Authentication is handled by the backend's own JWT/bcrypt user table; Supabase Auth users are not automatically recognized by this application.
 

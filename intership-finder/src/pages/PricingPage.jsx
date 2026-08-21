@@ -29,7 +29,7 @@ const tiers = {
       highlight: true,
       points: [
         "Everything in Free",
-        "200 built-in AI actions per month",
+        "200 built-in AI actions per month, including application packets",
         "No Gemini key setup required for AI tools",
         "Bring your own key if you go past the monthly quota",
       ],
@@ -77,7 +77,7 @@ const tiers = {
       highlight: false,
       points: [
         "Everything in Free",
-        "200 built-in AI actions per month",
+        "200 built-in AI actions per month, including application packets",
         "No Gemini key setup required for AI tools",
         "Bring your own key if you go past the monthly quota",
       ],
@@ -94,7 +94,7 @@ const tiers = {
       points: [
         "One payment, permanent access",
         "Best fit for students who do not want subscriptions",
-        "300 built-in AI actions per month",
+        "300 built-in AI actions per month, including application packets",
         "Strongest value if you use AI tools often",
       ],
     },
@@ -147,7 +147,7 @@ export default function PricingPage({ startCheckout, checkoutLoading, billing })
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: 12 }}>
             {[
               ["No paywall on the tracker", "Applications, analytics, reminders, exports"],
-              ["Built-in AI on paid plans", "Cover letters, resume match, follow-ups, company intel"],
+              ["Built-in AI on paid plans", "Packets, cover letters, resume match, follow-ups, company intel"],
               ["Usage stays visible", "Monthly AI quota is tracked from your account"],
             ].map(([title, desc]) => (
               <div key={title} style={{ padding: 16, borderRadius: "var(--r)", background: "var(--s2)", border: "1px solid var(--b0)" }}>

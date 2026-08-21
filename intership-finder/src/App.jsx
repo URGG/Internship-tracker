@@ -255,6 +255,9 @@ export default function App() {
   const [coverJob, setCoverJob] = useState("");
   const [coverOut, setCoverOut] = useState("");
   const [coverLoad, setCoverLoad] = useState(false);
+  const [packetJob, setPacketJob] = useState("");
+  const [packetData, setPacketData] = useState(null);
+  const [packetLoad, setPacketLoad] = useState(false);
   const [matchData, setMatchData] = useState(null);
   const [matchLoad, setMatchLoad] = useState(false);
   const [followUpOut, setFollowUpOut] = useState("");
@@ -962,6 +965,40 @@ export default function App() {
     }
   };
 
+  const runApplicationPacket = async () => {
+    if (!requireAuth()) return;
+    if (!resumeTxt.trim()) {
+      toast("Add your resume text in Settings first", "#fbbf24");
+      return;
+    }
+    setPacketLoad(true);
+    setPacketData(null);
+    try {
+      const res = await fetch(`${API_BASE}/application-packet`, {
+        method: "POST",
+        headers: authHeaders,
+        body: JSON.stringify({
+          application_id: form.id,
+          company: form.company,
+          role: form.role,
+          description: packetJob,
+          context: resumeTxt,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || "Application packet failed");
+      const serializedPacket = JSON.stringify(data);
+      setPacketData(data);
+      setForm((current) => ({ ...current, application_packet: serializedPacket }));
+      setApps((current) => current.map((app) => (app.id === form.id ? { ...app, application_packet: serializedPacket } : app)));
+      refreshBilling();
+    } catch (e) {
+      toast(e.message || "Application packet failed", "#f87171");
+    } finally {
+      setPacketLoad(false);
+    }
+  };
+
   const runFollowUpDraft = async () => {
     if (!requireAuth()) return;
     if (!resumeTxt.trim()) {
@@ -1128,6 +1165,21 @@ export default function App() {
       setCoverJob("");
       setModal("cover");
     }
+  };
+
+  const openApplicationPacket = (a) => {
+    if (!requireAuth()) return;
+    let savedPacket = null;
+    try {
+      savedPacket = a.application_packet ? JSON.parse(a.application_packet) : null;
+    } catch {
+      savedPacket = null;
+    }
+    setForm({ ...BLANK, ...normalizeApp(a) });
+    setPacketJob(a.notes || "");
+    setPacketData(savedPacket);
+    setPacketLoad(false);
+    setModal("packet");
   };
 
   const openResumeMatch = (a) => {
@@ -1444,6 +1496,12 @@ export default function App() {
             coverLoad={coverLoad}
             coverOut={coverOut}
             genCover={genCover}
+            openApplicationPacket={openApplicationPacket}
+            packetJob={packetJob}
+            setPacketJob={setPacketJob}
+            packetData={packetData}
+            packetLoad={packetLoad}
+            runApplicationPacket={runApplicationPacket}
             openCover={openCover}
             openResumeMatch={openResumeMatch}
             openFollowUp={openFollowUp}

@@ -186,6 +186,7 @@ class JobApplication(Base):
     last_contact_date = Column(String, nullable=True)
     resume_version = Column(String, nullable=True)
     cover_letter_version = Column(String, nullable=True)
+    application_packet = Column(Text, nullable=True)
     activity_log = Column(Text, nullable=True)
 
 class SearchSubscription(Base):
@@ -282,6 +283,7 @@ class JobCreate(BaseModel):
     last_contact_date: Optional[str] = None
     resume_version: Optional[str] = None
     cover_letter_version: Optional[str] = None
+    application_packet: Optional[str] = None
     activity_log: Optional[str] = None
 
 class JobImportRequest(BaseModel):
@@ -333,6 +335,13 @@ class FollowUpRequest(BaseModel):
     notes: Optional[str] = None
     context: str
 
+class ApplicationPacketRequest(BaseModel):
+    application_id: Optional[int] = None
+    company: str
+    role: str
+    description: str
+    context: str
+
 app = FastAPI()
 
 app.add_middleware(
@@ -376,6 +385,7 @@ def ensure_job_application_columns():
         "last_contact_date": "VARCHAR",
         "resume_version": "VARCHAR",
         "cover_letter_version": "VARCHAR",
+        "application_packet": "TEXT",
         "activity_log": "TEXT",
     }
 
@@ -895,7 +905,7 @@ def normalize_job_payload(job: JobCreate):
     for key in [
         "applied_date", "deadline", "location", "link", "notes", "recruiter_name",
         "recruiter_email", "referral_name", "interview_stage", "next_action_date",
-        "last_contact_date", "resume_version", "cover_letter_version"
+        "last_contact_date", "resume_version", "cover_letter_version", "application_packet"
     ]:
         if payload.get(key) == "":
             payload[key] = None
@@ -922,6 +932,7 @@ def normalize_job_payload(job: JobCreate):
         "referral_name": 160,
         "resume_version": 120,
         "cover_letter_version": 120,
+        "application_packet": 50000,
         "link": 2048,
     }.items():
         if payload.get(key) and len(payload[key]) > max_length:
@@ -1230,7 +1241,7 @@ def normalize_username(value: str) -> str:
     return username
 
 def bounded_text(value: Optional[str], max_length: int) -> str:
-    return (value or "").strip()[:max_length]
+    return str(value or "").strip()[:max_length]
 
 def validate_password(value: str):
     if not value or len(value) < 8:
@@ -1248,6 +1259,41 @@ RESUME_MATCH_SCHEMA = {
         "next_steps": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["score", "strengths", "missing_keywords", "summary", "next_steps"],
+}
+
+APPLICATION_PACKET_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "score": {"type": "integer"},
+        "summary": {"type": "string"},
+        "missing_keywords": {"type": "array", "items": {"type": "string"}},
+        "tailored_bullets": {"type": "array", "items": {"type": "string"}},
+        "cover_letter": {"type": "string"},
+        "application_answers": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "answer": {"type": "string"},
+                },
+                "required": ["question", "answer"],
+            },
+        },
+        "interview_questions": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "question": {"type": "string"},
+                    "focus": {"type": "string"},
+                },
+                "required": ["question", "focus"],
+            },
+        },
+        "next_actions": {"type": "array", "items": {"type": "string"}},
+    },
+    "required": ["score", "summary", "missing_keywords", "tailored_bullets", "cover_letter", "application_answers", "interview_questions", "next_actions"],
 }
 
 COMPANY_INTEL_SCHEMA = {
@@ -2271,6 +2317,78 @@ def resume_match(req: ResumeMatchRequest, request: Request, workspace: Organizat
         parsed["next_steps"] = parsed.get("next_steps") or []
         parsed["summary"] = parsed.get("summary") or ""
         return parsed
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI Error: {str(e)}")
+
+@app.post("/api/application-packet")
+def application_packet(req: ApplicationPacketRequest, request: Request, workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    require_workspace_role(db, workspace, current_user.id, EDIT_WORKSPACE_ROLES)
+    job = None
+    if req.application_id is not None:
+        job = db.query(JobApplication).filter(
+            JobApplication.id == req.application_id,
+            JobApplication.organization_id == workspace.id,
+        ).first()
+        if not job:
+            raise HTTPException(status_code=404, detail="Application not found")
+
+    description = bounded_text(req.description, 16000) or bounded_text(job.notes if job else "", 16000)
+    prompt = f"""
+    Build a practical application packet for an internship candidate.
+    Company: {bounded_text(req.company, 160)}
+    Role: {bounded_text(req.role, 200)}
+    Job Description: {description or "Not provided. Make the recommendations general and say when details are missing."}
+    Candidate Resume/Profile: {bounded_text(req.context, 30000)}
+
+    Return EXACTLY valid JSON with these fields:
+    - score: integer 0-100 for fit based only on the provided information
+    - summary: two concise sentences explaining the fit
+    - missing_keywords: up to 8 important job terms not clearly supported by the resume
+    - tailored_bullets: up to 4 truthful resume bullet rewrites based only on existing candidate experience; do not invent metrics, employers, or skills
+    - cover_letter: a concise, specific cover letter under 280 words
+    - application_answers: up to 3 likely application questions with concise answers
+    - interview_questions: 5 likely interview questions, each with a short focus note
+    - next_actions: 4 concrete actions ordered by priority
+
+    Never claim the candidate has experience that is not present in the resume/profile. If the job description is missing, keep the output conservative and tell the candidate what information to add.
+    """
+
+    try:
+        content = generate_user_gemini_content(
+            current_user,
+            db,
+            "application_packet",
+            prompt,
+            APPLICATION_PACKET_SCHEMA,
+            temperature=0.3,
+            request_id=request_id_for(request),
+            organization_id=workspace.id,
+        )
+        parsed = extract_json_object(content)
+        parsed["score"] = max(0, min(100, int(parsed.get("score", 0))))
+        parsed["summary"] = bounded_text(parsed.get("summary"), 1200)
+        parsed["cover_letter"] = bounded_text(parsed.get("cover_letter"), 12000)
+        for field in ("missing_keywords", "tailored_bullets", "next_actions"):
+            values = parsed.get(field)
+            parsed[field] = [bounded_text(value, 800) for value in values if isinstance(value, str)][:8] if isinstance(values, list) else []
+        answers = parsed.get("application_answers") if isinstance(parsed.get("application_answers"), list) else []
+        parsed["application_answers"] = [
+            {"question": bounded_text(item.get("question"), 500), "answer": bounded_text(item.get("answer"), 1800)}
+            for item in answers
+            if isinstance(item, dict)
+        ][:3]
+        questions = parsed.get("interview_questions") if isinstance(parsed.get("interview_questions"), list) else []
+        parsed["interview_questions"] = [
+            {"question": bounded_text(item.get("question"), 500), "focus": bounded_text(item.get("focus"), 500)}
+            for item in questions
+            if isinstance(item, dict)
+        ][:5]
+        if job:
+            job.application_packet = json.dumps(parsed, separators=(",", ":"))
+            db.commit()
+        return {**parsed, "saved": bool(job)}
     except HTTPException:
         raise
     except Exception as e:

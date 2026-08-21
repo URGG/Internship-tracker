@@ -43,5 +43,6 @@ export const BLANK = {
   last_contact_date: "",
   resume_version: "",
   cover_letter_version: "",
+  application_packet: "",
   activity_log: "[]",
 };

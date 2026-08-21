@@ -16,7 +16,7 @@ const features = [
   ["tracker", "Application tracker", "Save roles, stages, notes, contacts, links, and dates."],
   ["analytics", "Weekly review", "Watch response rates, interviews, offers, and source performance."],
   ["search", "Job search tools", "Find listings, import leads, and avoid tracking duplicates."],
-  ["spark", "Optional AI drafts", "Generate cover letters, follow-ups, resume matches, and company notes."],
+  ["spark", "Application packets", "Turn a saved role into fit notes, truthful resume bullets, answers, and interview prep."],
 ];
 
 const pricingPlans = [
@@ -30,7 +30,7 @@ const pricingPlans = [
   {
     name: "Pro",
     price: "$9/mo",
-    detail: "Built-in AI quota for cover letters, resume match, follow-ups, and company intel.",
+    detail: "Built-in AI quota for application packets, cover letters, resume match, follow-ups, and company intel.",
     action: "Choose monthly",
     id: "pro_monthly",
   },
