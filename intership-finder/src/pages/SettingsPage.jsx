@@ -13,6 +13,12 @@ export default function SettingsPage({
   setGKey,
   resumeTxt,
   setResumeTxt,
+  profile,
+  setProfile,
+  profileLoading,
+  profileSaving,
+  saveProfile,
+  keysSaving,
   saveUserKeys,
   subs,
   addHunt,
@@ -64,6 +70,7 @@ export default function SettingsPage({
     ["Restored records", productUsage.json_restore || 0],
   ];
   const canManageWorkspace = ["owner", "admin"].includes(activeWorkspace?.role);
+  const setProfileField = (field) => (event) => setProfile((current) => ({ ...current, [field]: event.target.value }));
 
   const runWorkspaceAction = async (key, action, successMessage) => {
     setWorkspaceAction(key);
@@ -279,20 +286,20 @@ export default function SettingsPage({
         </p>
         <div className="srow">
           <label>RapidAPI Key</label>
-          <input type="password" value={rKey} onChange={(e) => setRKey(e.target.value)} placeholder="Paste JSearch key here..." />
+          <input type="password" value={rKey} onChange={(e) => setRKey(e.target.value)} placeholder="Paste JSearch key here..." autoComplete="off" spellCheck="false" />
         </div>
         <div className="note" style={{ marginBottom: 14 }}>
-          Used for: live job search and auto-hunter. Saving runs a small JSearch validation request.
+          Used for: live job search and auto-hunter. Paste the raw RapidAPI key (without “Bearer ”). Saving runs a small JSearch validation request.
         </div>
         <div className="srow">
           <label>Gemini API Key</label>
-          <input type="password" value={gKey} onChange={(e) => setGKey(e.target.value)} placeholder="Paste Gemini key here..." />
+          <input type="password" value={gKey} onChange={(e) => setGKey(e.target.value)} placeholder="Paste Gemini key here..." autoComplete="off" spellCheck="false" />
         </div>
         <div className="note" style={{ marginBottom: 14 }}>
           Used for: AI cover letters, resume match, follow-up drafts, and company intel. Saving runs a small Gemini validation request.
         </div>
-        <button className="mbtn mbtn-p" onClick={saveUserKeys} style={{ marginTop: 12 }}>
-          Validate and Save Keys
+        <button className="mbtn mbtn-p" onClick={saveUserKeys} disabled={keysSaving} style={{ marginTop: 12 }}>
+          {keysSaving ? "Validating keys..." : "Validate and Save Keys"}
         </button>
       </div>
 
@@ -314,6 +321,129 @@ export default function SettingsPage({
           />
           <button className="mbtn" onClick={() => backupInputRef.current?.click()}>Restore JSON</button>
         </div>
+      </div>
+
+      <div className="scard">
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start", flexWrap: "wrap" }}>
+          <div>
+            <h3>Application Profile</h3>
+            <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 16, maxWidth: 650 }}>
+              Fill this out once. The browser helper uses these details to pre-fill supported application forms. Review every answer before submitting.
+            </p>
+          </div>
+          {profileLoading && <span className="tag t-ot">Syncing...</span>}
+        </div>
+
+        <div className="fg2">
+          <div className="frow">
+            <span className="flbl">First name</span>
+            <input className="finp" value={profile?.first_name || ""} onChange={setProfileField("first_name")} placeholder="Alex" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Last name</span>
+            <input className="finp" value={profile?.last_name || ""} onChange={setProfileField("last_name")} placeholder="Johnson" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Email</span>
+            <input className="finp" type="email" value={profile?.email || ""} onChange={setProfileField("email")} placeholder="alex@example.com" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Phone</span>
+            <input className="finp" type="tel" value={profile?.phone || ""} onChange={setProfileField("phone")} placeholder="(555) 555-0100" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Street address</span>
+            <input className="finp" value={profile?.address || ""} onChange={setProfileField("address")} placeholder="123 Main Street" />
+          </div>
+          <div className="frow">
+            <span className="flbl">City</span>
+            <input className="finp" value={profile?.city || ""} onChange={setProfileField("city")} placeholder="Los Angeles" />
+          </div>
+          <div className="frow">
+            <span className="flbl">State / region</span>
+            <input className="finp" value={profile?.state || ""} onChange={setProfileField("state")} placeholder="CA" />
+          </div>
+          <div className="frow">
+            <span className="flbl">ZIP / postal code</span>
+            <input className="finp" value={profile?.zip_code || ""} onChange={setProfileField("zip_code")} placeholder="90001" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Country</span>
+            <input className="finp" value={profile?.country || ""} onChange={setProfileField("country")} placeholder="United States" />
+          </div>
+        </div>
+
+        <div className="fg2">
+          <div className="frow">
+            <span className="flbl">LinkedIn</span>
+            <input className="finp" type="url" value={profile?.linkedin_url || ""} onChange={setProfileField("linkedin_url")} placeholder="https://linkedin.com/in/you" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Portfolio / website</span>
+            <input className="finp" type="url" value={profile?.portfolio_url || ""} onChange={setProfileField("portfolio_url")} placeholder="https://your-site.com" />
+          </div>
+          <div className="frow">
+            <span className="flbl">GitHub</span>
+            <input className="finp" type="url" value={profile?.github_url || ""} onChange={setProfileField("github_url")} placeholder="https://github.com/you" />
+          </div>
+          <div className="frow">
+            <span className="flbl">School</span>
+            <input className="finp" value={profile?.school || ""} onChange={setProfileField("school")} placeholder="State University" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Degree / major</span>
+            <input className="finp" value={profile?.degree || ""} onChange={setProfileField("degree")} placeholder="B.S. Computer Science" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Major / field of study</span>
+            <input className="finp" value={profile?.major || ""} onChange={setProfileField("major")} placeholder="Computer Science" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Graduation date</span>
+            <input className="finp" value={profile?.graduation_date || ""} onChange={setProfileField("graduation_date")} placeholder="May 2027" />
+          </div>
+          <div className="frow">
+            <span className="flbl">GPA (optional)</span>
+            <input className="finp" value={profile?.gpa || ""} onChange={setProfileField("gpa")} placeholder="3.7 / 4.0" />
+          </div>
+        </div>
+
+        <div className="fg2">
+          <div className="frow">
+            <span className="flbl">Work authorization</span>
+            <input className="finp" value={profile?.work_authorization || ""} onChange={setProfileField("work_authorization")} placeholder="Authorized to work in the U.S." />
+          </div>
+          <div className="frow">
+            <span className="flbl">Sponsorship answer</span>
+            <input className="finp" value={profile?.sponsorship || ""} onChange={setProfileField("sponsorship")} placeholder="No sponsorship required" />
+          </div>
+          <div className="frow">
+            <span className="flbl">Salary expectation</span>
+            <input className="finp" value={profile?.salary_expectation || ""} onChange={setProfileField("salary_expectation")} placeholder="Open to market rate" />
+          </div>
+        </div>
+
+        <div className="fg2">
+          <div className="frow">
+            <span className="flbl">Why this company?</span>
+            <textarea className="finp fta" value={profile?.why_company || ""} onChange={setProfileField("why_company")} placeholder="A reusable starting point for application questions..." style={{ minHeight: 90 }} />
+          </div>
+          <div className="frow">
+            <span className="flbl">Why this role?</span>
+            <textarea className="finp fta" value={profile?.why_role || ""} onChange={setProfileField("why_role")} placeholder="What interests you about this kind of work?" style={{ minHeight: 90 }} />
+          </div>
+        </div>
+
+        <div className="frow">
+          <span className="flbl">Other reusable information</span>
+          <textarea className="finp fta" value={profile?.additional_information || ""} onChange={setProfileField("additional_information")} placeholder="Projects, availability, certifications, or other answers you often reuse..." style={{ minHeight: 100 }} />
+        </div>
+        <div className="note" style={{ marginTop: 12 }}>
+          Sensitive demographic and identity questions are intentionally not auto-filled. You should answer those yourself for each employer.
+        </div>
+        <button className="mbtn mbtn-p" onClick={saveProfile} disabled={profileSaving || profileLoading} style={{ marginTop: 14 }}>
+          {profileSaving ? "Saving profile..." : "Save application profile"}
+        </button>
       </div>
 
       <div className="scard">
@@ -368,6 +498,7 @@ export default function SettingsPage({
         </div>
 
         <textarea className="finp fta" placeholder="Or paste your text manually here..." value={resumeTxt} onChange={(e) => setResumeTxt(e.target.value.slice(0, 30000))} style={{ width: "100%", minHeight: "150px" }} />
+        <div className="note" style={{ marginTop: 10 }}>Save your application profile above after changing this resume so the browser helper can use it on another device.</div>
       </div>
 
       <div className="scard">

@@ -19,6 +19,7 @@ export default function Modal({
   coverLoad,
   coverOut,
   genCover,
+  openApplyAssist,
   openApplicationPacket,
   packetJob,
   setPacketJob,
@@ -67,6 +68,11 @@ export default function Modal({
               <div className="mhead-right" style={{ gap: 8 }}>
                 {eid && (
                   <>
+                    {form.link && (
+                      <button className="ai-pill" onClick={() => openApplyAssist(form)} title="Open the application and use the browser helper">
+                        Apply Assist
+                      </button>
+                    )}
                     <button className="ai-pill" onClick={() => fetchIntel(form)} title="Get AI Insights">
                       Intel
                     </button>

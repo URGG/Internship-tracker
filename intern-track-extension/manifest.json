@@ -1,8 +1,8 @@
 {
     "manifest_version": 3,
     "name": "intern.track",
-    "version": "1.0",
-    "description": "Save internships directly to your Kanban board.",
+    "version": "1.1",
+    "description": "Save internships and fill supported application forms with your intern.track profile.",
     "permissions": [
         "activeTab",
         "scripting",

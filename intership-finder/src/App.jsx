@@ -31,9 +31,45 @@ const DEFAULT_BILLING = {
   usage: {},
 };
 
+const DEFAULT_PROFILE = {
+  first_name: "",
+  last_name: "",
+  email: "",
+  phone: "",
+  address: "",
+  city: "",
+  state: "",
+  zip_code: "",
+  country: "",
+  linkedin_url: "",
+  portfolio_url: "",
+  github_url: "",
+  school: "",
+  degree: "",
+  major: "",
+  graduation_date: "",
+  gpa: "",
+  work_authorization: "",
+  sponsorship: "",
+  salary_expectation: "",
+  why_company: "",
+  why_role: "",
+  additional_information: "",
+  resume_text: "",
+};
+
 const normalizeBool = (value) => value === true || value === "true" || value === 1;
 const normalizeStatus = (status) => (status === "Phone Screen" ? "Interview" : status);
 const normalizeInterviewStage = (stage) => (stage === "Phone Screen" ? "Recruiter Screen" : stage);
+
+const apiErrorMessage = (response, data, fallback) => {
+  const detail = typeof data?.detail === "string" ? data.detail.trim() : "";
+  if (detail && !(response.status === 404 && detail.toLowerCase() === "not found")) return detail;
+  if (response.status === 401) return "Your session expired. Please log in again.";
+  if (response.status === 404) return `${fallback} endpoint was not found (404). Check that the backend URL is correct and deployed.`;
+  if (response.status === 502 || response.status === 503) return `${fallback} service is temporarily unavailable. Try again shortly.`;
+  return response.status ? `${fallback} failed (HTTP ${response.status}).` : fallback;
+};
 
 const normalizeApp = (app = {}) => {
   const normalized = { ...BLANK, ...app };
@@ -269,8 +305,12 @@ export default function App() {
   const [intelLoad, setIntelLoad] = useState(false);
 
   const [resumeTxt, setResumeTxt] = useState(() => localStorage.getItem("resumeTxt") || "");
+  const [profile, setProfile] = useState(DEFAULT_PROFILE);
+  const [profileLoading, setProfileLoading] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [rKey, setRKey] = useState("");
   const [gKey, setGKey] = useState("");
+  const [keysSaving, setKeysSaving] = useState(false);
 
   const [jsQ, setJsQ] = useState("software engineering intern");
   const [jsLoc, setJsLoc] = useState("Los Angeles, CA");
@@ -336,6 +376,7 @@ export default function App() {
     setApps([]);
     setSubs([]);
     setBilling(DEFAULT_BILLING);
+    setProfile(DEFAULT_PROFILE);
     setAnalyticsData(null);
     setWorkspaces([]);
     setWorkspaceMembers([]);
@@ -371,6 +412,38 @@ export default function App() {
   }, [resumeTxt]);
 
   useEffect(() => {
+    if (!token) {
+      setProfile(DEFAULT_PROFILE);
+      return undefined;
+    }
+    let cancelled = false;
+    setProfileLoading(true);
+    fetch(`${API_BASE}/profile`, { headers: baseAuthHeaders })
+      .then(async (res) => {
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 401) {
+          clearAuthSession();
+          openAuth("login");
+          throw new Error("Session expired");
+        }
+        if (!res.ok) throw new Error(data.detail || "Profile sync failed");
+        if (cancelled) return;
+        const nextProfile = { ...DEFAULT_PROFILE, ...(data.profile || {}) };
+        setProfile(nextProfile);
+        if (nextProfile.resume_text || !localStorage.getItem("resumeTxt")) setResumeTxt(nextProfile.resume_text || "");
+      })
+      .catch((error) => {
+        if (!cancelled && error.message !== "Session expired") toast(error.message || "Profile sync failed", "#fbbf24");
+      })
+      .finally(() => {
+        if (!cancelled) setProfileLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [baseAuthHeaders, clearAuthSession, openAuth, token, toast]);
+
+  useEffect(() => {
     localStorage.setItem(APPS_CACHE_KEY, JSON.stringify(apps));
   }, [apps]);
 
@@ -389,7 +462,13 @@ export default function App() {
   };
 
   const exportJobsJson = () => {
-    downloadFile(`intern-track-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(apps, null, 2), "application/json");
+    const backup = {
+      version: 2,
+      exported_at: new Date().toISOString(),
+      profile: { ...profile, resume_text: resumeTxt },
+      applications: apps,
+    };
+    downloadFile(`intern-track-backup-${new Date().toISOString().slice(0, 10)}.json`, JSON.stringify(backup, null, 2), "application/json");
   };
 
   const importJobsJson = async (file) => {
@@ -412,6 +491,18 @@ export default function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.detail || "Restore failed");
       if (Array.isArray(data.jobs)) setApps(data.jobs.map(normalizeApp));
+      if (parsed?.profile && typeof parsed.profile === "object") {
+        const profileRes = await fetch(`${API_BASE}/profile`, {
+          method: "PUT",
+          headers: { ...baseAuthHeaders, "Content-Type": "application/json" },
+          body: JSON.stringify({ ...DEFAULT_PROFILE, ...parsed.profile }),
+        });
+        const profileData = await profileRes.json().catch(() => ({}));
+        if (!profileRes.ok) throw new Error(profileData.detail || "Applications restored, but profile restore failed");
+        const restoredProfile = { ...DEFAULT_PROFILE, ...(profileData.profile || {}) };
+        setProfile(restoredProfile);
+        setResumeTxt(restoredProfile.resume_text || "");
+      }
       toast(`Restored ${data.added} application${data.added === 1 ? "" : "s"}${data.skipped ? `; skipped ${data.skipped} duplicate${data.skipped === 1 ? "" : "s"}` : ""}`, "#34d399");
     } catch (error) {
       toast(error.message || "Restore failed", "#f87171");
@@ -446,6 +537,7 @@ export default function App() {
       setWorkspaces([]);
       setWorkspaceMembers([]);
       setActiveWorkspaceId("");
+      setProfile(DEFAULT_PROFILE);
       localStorage.removeItem(APPS_CACHE_KEY);
       localStorage.removeItem(SUBS_CACHE_KEY);
       return;
@@ -733,12 +825,14 @@ export default function App() {
     setHLoading(true);
     try {
       const res = await fetch(`${API_BASE}/hunter/run`, { method: "POST", headers: authHeaders });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Hunter failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorMessage(res, data, "Auto-hunter"));
 
       if (data.added > 0) {
         const jobsRes = await fetch(`${API_BASE}/jobs`, { headers: authHeaders });
-        const jobsData = await jobsRes.json();
+        const jobsData = await jobsRes.json().catch(() => ({}));
+        if (!jobsRes.ok) throw new Error(apiErrorMessage(jobsRes, jobsData, "Application sync"));
+        if (!Array.isArray(jobsData)) throw new Error("Application sync returned an invalid response.");
         setApps(jobsData.map(normalizeApp));
       }
 
@@ -758,21 +852,56 @@ export default function App() {
 
   const saveUserKeys = async () => {
     if (!requireAuth()) return;
+    setKeysSaving(true);
     try {
       const res = await fetch(`${API_BASE}/update-keys`, {
         method: "POST",
         headers: authHeaders,
         body: JSON.stringify({ rapid_key: rKey, gemini_key: gKey }),
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Failed to validate and secure keys");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorMessage(res, data, "Key validation"));
       toast("Keys validated and encrypted", "#34d399");
       setRKey("");
       setGKey("");
       refreshBilling();
     } catch (e) {
-      toast(e.message, "#f87171");
+      toast(e.message || "Key validation failed", "#f87171");
+    } finally {
+      setKeysSaving(false);
     }
+  };
+
+  const saveProfile = async () => {
+    if (!requireAuth()) return;
+    setProfileSaving(true);
+    try {
+      const res = await fetch(`${API_BASE}/profile`, {
+        method: "PUT",
+        headers: { ...baseAuthHeaders, "Content-Type": "application/json" },
+        body: JSON.stringify({ ...profile, resume_text: resumeTxt }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || "Could not save application profile");
+      const savedProfile = { ...DEFAULT_PROFILE, ...(data.profile || {}) };
+      setProfile(savedProfile);
+      setResumeTxt(savedProfile.resume_text || "");
+      toast("Application profile saved", "#34d399");
+    } catch (error) {
+      toast(error.message || "Could not save application profile", "#f87171");
+    } finally {
+      setProfileSaving(false);
+    }
+  };
+
+  const openApplyAssist = (application) => {
+    if (!requireAuth()) return;
+    if (!application?.link) {
+      toast("Add the application link first", "#fbbf24");
+      return;
+    }
+    window.open(application.link, "_blank", "noopener,noreferrer");
+    toast("Application opened. Click the intern.track extension to fill supported fields.", "#5b7fff");
   };
 
   const startCheckout = useCallback(async (planId) => {
@@ -870,8 +999,9 @@ export default function App() {
     try {
       const params = new URLSearchParams({ query: jsQ, location: jsLoc, jobType: jsType, datePosted: jsDate });
       const res = await fetch(`${API_BASE}/search?${params}`, { headers: authHeaders });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.detail || "Search failed");
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorMessage(res, data, "Job search"));
+      if (!Array.isArray(data)) throw new Error("Job search returned an invalid response. Try again shortly.");
       setJsRes(data);
       if (data.length === 0) setJsErr("No jobs found.");
     } catch (e) {
@@ -1394,6 +1524,7 @@ export default function App() {
                 onDrop={onDrop}
                 openEdit={openEdit}
                 openCover={openCover}
+                openApplyAssist={openApplyAssist}
                 setDragId={setDragId}
                 reminders={reminders}
                 smartQueue={smartQueue}
@@ -1443,6 +1574,12 @@ export default function App() {
                   setGKey={setGKey}
                   resumeTxt={resumeTxt}
                   setResumeTxt={setResumeTxt}
+                  profile={profile}
+                  setProfile={setProfile}
+                  profileLoading={profileLoading}
+                  profileSaving={profileSaving}
+                  saveProfile={saveProfile}
+                  keysSaving={keysSaving}
                   saveUserKeys={saveUserKeys}
                   subs={subs}
                   addHunt={addHunt}
@@ -1496,6 +1633,7 @@ export default function App() {
             coverLoad={coverLoad}
             coverOut={coverOut}
             genCover={genCover}
+            openApplyAssist={openApplyAssist}
             openApplicationPacket={openApplicationPacket}
             packetJob={packetJob}
             setPacketJob={setPacketJob}

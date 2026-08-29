@@ -33,6 +33,7 @@ export default function TrackerPage({
   onDrop,
   openEdit,
   openCover,
+  openApplyAssist,
   setDragId,
   reminders,
   smartQueue = [],
@@ -162,7 +163,7 @@ export default function TrackerPage({
                 <div className="kcards">
                   {ca.length === 0 && <div className="kdrop">drop here</div>}
                   {ca.map((a) => (
-                    <Card key={a.id} app={a} setDragId={setDragId} setDragOver={setDragOver} openEdit={openEdit} />
+                    <Card key={a.id} app={a} setDragId={setDragId} setDragOver={setDragOver} openEdit={openEdit} openApplyAssist={openApplyAssist} />
                   ))}
                 </div>
               </div>
@@ -181,12 +182,13 @@ export default function TrackerPage({
                 <th>Applied</th>
                 <th>Deadline</th>
                 <th></th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={7}>
+                  <td colSpan={8}>
                     <div className="empty">
                       <div className="empty-ico"><Icon name="empty" size={36} strokeWidth={1.7} /></div>
                       <p>no applications found</p>
@@ -221,6 +223,14 @@ export default function TrackerPage({
                       }}
                     >
                       <button className="rbtn"><Icon name="spark" size={14} /> AI Cover</button>
+                    </td>
+                    <td
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        openApplyAssist(a);
+                      }}
+                    >
+                      {a.link && <button className="rbtn"><Icon name="external" size={14} /> Apply Assist</button>}
                     </td>
                   </tr>
                 );

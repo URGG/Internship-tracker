@@ -161,6 +161,7 @@ class User(Base):
     plan = Column(String, default="free")
     subscription_status = Column(String, default="free")
     current_period_end = Column(String, nullable=True)
+    profile_json = Column(Text, nullable=True)
 
 class JobApplication(Base):
     __tablename__ = "applications"
@@ -254,6 +255,32 @@ class UserAuth(BaseModel):
 class KeysUpdate(BaseModel):
     rapid_key: Optional[str] = None
     gemini_key: Optional[str] = None
+
+class CandidateProfile(BaseModel):
+    first_name: Optional[str] = ""
+    last_name: Optional[str] = ""
+    email: Optional[str] = ""
+    phone: Optional[str] = ""
+    address: Optional[str] = ""
+    city: Optional[str] = ""
+    state: Optional[str] = ""
+    zip_code: Optional[str] = ""
+    country: Optional[str] = ""
+    linkedin_url: Optional[str] = ""
+    portfolio_url: Optional[str] = ""
+    github_url: Optional[str] = ""
+    school: Optional[str] = ""
+    degree: Optional[str] = ""
+    major: Optional[str] = ""
+    graduation_date: Optional[str] = ""
+    gpa: Optional[str] = ""
+    work_authorization: Optional[str] = ""
+    sponsorship: Optional[str] = ""
+    salary_expectation: Optional[str] = ""
+    why_company: Optional[str] = ""
+    why_role: Optional[str] = ""
+    additional_information: Optional[str] = ""
+    resume_text: Optional[str] = ""
 
 class SubscriptionCreate(BaseModel):
     query: str
@@ -408,6 +435,7 @@ def ensure_user_columns():
         "plan": "VARCHAR DEFAULT 'free'",
         "subscription_status": "VARCHAR DEFAULT 'free'",
         "current_period_end": "VARCHAR",
+        "profile_json": "TEXT",
     }
 
     if not existing_columns:
@@ -1139,6 +1167,41 @@ def normalize_ai_error(error: Exception) -> HTTPException:
         return HTTPException(status_code=502, detail=f"Gemini model '{GEMINI_MODEL}' is not available for this API key.")
     return HTTPException(status_code=502, detail=f"Gemini request failed: {message}")
 
+def normalize_rapidapi_key(value: Optional[str]) -> str:
+    """Accept the raw key as well as common copy/paste formats."""
+    key = str(value or "").strip()
+    lowered = key.lower()
+    for prefix in ("bearer ", "x-rapidapi-key:"):
+        if lowered.startswith(prefix):
+            key = key[len(prefix):].strip()
+            break
+    return key.strip().strip("\"'").strip()
+
+def rapidapi_error_detail(response, operation: str):
+    """Turn upstream RapidAPI statuses into safe, actionable application errors."""
+    status = response.status_code
+    if status in {401, 403}:
+        return 400, (
+            f"{operation} could not authenticate with RapidAPI. Check that the key is correct "
+            "and that your RapidAPI account is subscribed to JSearch."
+        )
+    if status == 404:
+        return 502, (
+            f"{operation} reached RapidAPI, but JSearch returned HTTP 404. "
+            "Make sure the RapidAPI key has an active JSearch subscription, then re-save the key in Settings."
+        )
+    if status == 429:
+        return 429, f"{operation} hit the RapidAPI quota or rate limit. Check your RapidAPI plan and try again later."
+    if status >= 500:
+        return 502, f"{operation} is temporarily unavailable because RapidAPI returned HTTP {status}. Try again shortly."
+    if 400 <= status < 500:
+        return 400, f"{operation} was rejected by RapidAPI (HTTP {status}). Check the search values and JSearch access."
+    return 502, f"{operation} failed because RapidAPI returned HTTP {status}. Try again shortly."
+
+def raise_rapidapi_error(response, operation: str):
+    status_code, detail = rapidapi_error_detail(response, operation)
+    raise HTTPException(status_code=status_code, detail=detail)
+
 def validate_gemini_key(api_key: str):
     try:
         generate_gemini_content(api_key, "Reply with exactly: OK", temperature=0)
@@ -1146,6 +1209,7 @@ def validate_gemini_key(api_key: str):
         raise HTTPException(status_code=exc.status_code, detail=f"Gemini key validation failed: {exc.detail}")
 
 def validate_rapidapi_key(api_key: str):
+    api_key = normalize_rapidapi_key(api_key)
     try:
         response = requests.get(
             "https://jsearch.p.rapidapi.com/search",
@@ -1165,12 +1229,8 @@ def validate_rapidapi_key(api_key: str):
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"RapidAPI validation request failed: {str(exc)}")
 
-    if response.status_code in {401, 403}:
-        raise HTTPException(status_code=400, detail="RapidAPI key validation failed: key is invalid or does not have JSearch access.")
-    if response.status_code == 429:
-        raise HTTPException(status_code=429, detail="RapidAPI key validation failed: quota or rate limit reached.")
     if response.status_code >= 400:
-        raise HTTPException(status_code=502, detail=f"RapidAPI key validation failed with status {response.status_code}.")
+        raise_rapidapi_error(response, "RapidAPI key validation")
 
 def generate_gemini_content(api_key: str, prompt: str, schema: Optional[dict] = None, temperature: float = 0.4) -> str:
     if google_genai and google_genai_types:
@@ -1242,6 +1302,51 @@ def normalize_username(value: str) -> str:
 
 def bounded_text(value: Optional[str], max_length: int) -> str:
     return str(value or "").strip()[:max_length]
+
+PROFILE_FIELD_LIMITS = {
+    "first_name": 120,
+    "last_name": 120,
+    "email": 320,
+    "phone": 60,
+    "address": 240,
+    "city": 120,
+    "state": 120,
+    "zip_code": 30,
+    "country": 120,
+    "linkedin_url": 2048,
+    "portfolio_url": 2048,
+    "github_url": 2048,
+    "school": 240,
+    "degree": 160,
+    "major": 160,
+    "graduation_date": 40,
+    "gpa": 30,
+    "work_authorization": 500,
+    "sponsorship": 500,
+    "salary_expectation": 160,
+    "why_company": 3000,
+    "why_role": 3000,
+    "additional_information": 5000,
+    "resume_text": 30000,
+}
+
+def normalize_profile_payload(profile: CandidateProfile) -> dict:
+    payload = model_to_dict(profile)
+    for field_name, max_length in PROFILE_FIELD_LIMITS.items():
+        payload[field_name] = bounded_text(payload.get(field_name), max_length)
+    return payload
+
+def load_profile(current_user: User) -> dict:
+    try:
+        profile = json.loads(current_user.profile_json or "{}")
+    except (TypeError, json.JSONDecodeError):
+        profile = {}
+    if not isinstance(profile, dict):
+        profile = {}
+    profile.setdefault("email", current_user.email or "")
+    for field_name in PROFILE_FIELD_LIMITS:
+        profile.setdefault(field_name, "")
+    return profile
 
 def validate_password(value: str):
     if not value or len(value) < 8:
@@ -1552,7 +1657,7 @@ def login(user: UserAuth, request: Request, db: Session = Depends(get_db)):
 
 @app.post("/api/update-keys")
 def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    rapid_key = (keys.rapid_key or "").strip()
+    rapid_key = normalize_rapidapi_key(keys.rapid_key)
     gemini_key = (keys.gemini_key or "").strip()
     validated = []
     if rapid_key:
@@ -1567,6 +1672,19 @@ def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user)
         raise HTTPException(status_code=400, detail="Paste at least one key to validate and save.")
     db.commit()
     return {"message": "Keys validated and secured", "validated": validated}
+
+@app.get("/api/profile")
+def get_profile(current_user: User = Depends(get_current_user)):
+    return {"profile": load_profile(current_user)}
+
+@app.put("/api/profile")
+def update_profile(profile: CandidateProfile, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    payload = normalize_profile_payload(profile)
+    if payload.get("email"):
+        payload["email"] = normalize_email(payload["email"]) or ""
+    current_user.profile_json = json.dumps(payload, separators=(",", ":"))
+    db.commit()
+    return {"profile": payload}
 
 @app.get("/api/billing/me")
 def get_billing_status(workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -2209,8 +2327,9 @@ def proxy_cities(q: str):
     try:
         resp = requests.get("https://api.teleport.org/api/cities/", params={"search": q}, timeout=5)
         resp.raise_for_status()
-        return resp.json()
-    except requests.RequestException:
+        payload = resp.json()
+        return payload if isinstance(payload, dict) else {"_embedded": {"city:search-results": []}}
+    except (requests.RequestException, ValueError):
         return {"_embedded": {"city:search-results": []}}
 
 @app.post("/api/autofill-job-link")
@@ -2237,6 +2356,7 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
         user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
     except InvalidToken:
         raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
+    user_rapid_key = normalize_rapidapi_key(user_rapid_key)
 
     url = "https://jsearch.p.rapidapi.com/search"
     params = {
@@ -2254,9 +2374,20 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
     try:
         response = requests.get(url, headers=headers, params=params, timeout=10)
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="RapidAPI Error")
+            raise_rapidapi_error(response, "Job search")
 
-        data = response.json().get("data", [])
+        try:
+            payload = response.json()
+        except ValueError:
+            raise HTTPException(status_code=502, detail="Job search returned an invalid response from RapidAPI. Try again shortly.")
+        if not isinstance(payload, dict):
+            raise HTTPException(status_code=502, detail="Job search returned an invalid response from RapidAPI. Try again shortly.")
+        if str(payload.get("status", "")).upper() in {"ERROR", "FAILED"}:
+            raise HTTPException(status_code=502, detail="RapidAPI rejected the job search. Check your JSearch subscription and try again.")
+
+        data = payload.get("data", [])
+        if not isinstance(data, list):
+            data = []
         results = []
         for j in data:
             result_link = j.get("job_apply_link") or j.get("job_google_link")
@@ -2512,6 +2643,7 @@ def run_hunter(request: Request, workspace: Organization = Depends(get_current_w
         user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
     except InvalidToken:
         raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
+    user_rapid_key = normalize_rapidapi_key(user_rapid_key)
 
     subs = db.query(SearchSubscription).filter(SearchSubscription.organization_id == workspace.id).all()
 
@@ -2562,7 +2694,8 @@ def run_hunter(request: Request, workspace: Organization = Depends(get_current_w
                         existing_links.add(normalized_link)
                         new_jobs_count += 1
             else:
-                failures.append({"query": sub.query, "status": response.status_code})
+                _, detail = rapidapi_error_detail(response, "Auto-hunter search")
+                failures.append({"query": sub.query, "status": response.status_code, "error": detail})
         except Exception as e:
             logger.warning("Hunter search failed query=%s error=%s", sub.query, str(e))
             failures.append({"query": sub.query, "error": "request failed"})

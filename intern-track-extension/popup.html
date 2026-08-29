@@ -106,10 +106,10 @@
 
     <!-- LOGIN VIEW -->
     <div id="login-view" style="display: none;">
-        <label>Username</label>
-        <input type="text" id="login-user" />
+        <label>Email or username</label>
+        <input type="text" id="login-user" autocomplete="username" />
         <label>Password</label>
-        <input type="password" id="login-pass" />
+        <input type="password" id="login-pass" autocomplete="current-password" />
         <button id="login-btn">Log In to Sync</button>
         <div id="login-status" style="font-size: 11px; margin-top: 8px; text-align: center;"></div>
     </div>
@@ -126,6 +126,8 @@
         <textarea id="description" style="width: 100%; height: 80px; background: #252525; border: 1px solid #3f3f3f; border-radius: 6px; color: #ebebeb; font-size: 11px; padding: 8px; margin-bottom: 12px; resize: none; font-family: inherit;"></textarea>
 
         <button id="save-btn">Save to To Do ✨</button>
+        <button id="fill-btn" style="background: #252525; border: 1px solid #3f3f3f; color: #ebebeb;">Fill current page</button>
+        <div id="profile-status" style="font-size: 11px; margin-top: 8px; text-align: center; color: #9b9a97;"></div>
         <div id="status"></div>
     </div>
 

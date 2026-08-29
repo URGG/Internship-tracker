@@ -30,6 +30,7 @@ Optional extras include:
 - follow-up drafting
 - company intel
 - application packets with fit scoring, truthful resume bullets, application answers, interview prep, and next actions
+- reusable application profile with review-first browser autofill for supported forms
 
 Supabase currently provides the Postgres database only. Authentication is handled by the backend's own JWT/bcrypt user table; Supabase Auth users are not automatically recognized by this application.
 
@@ -69,6 +70,13 @@ Team workspaces are available through the application auth layer. Each account r
 - Draft recruiter follow-ups
 - Compare resume text against a job description
 - Generate company research summaries
+
+### Application profile and browser helper
+
+- Complete common identity, contact, education, authorization, and reusable-answer fields once in Settings.
+- Open an application from the tracker with `Apply Assist`, then click the intern.track browser extension on the employer form.
+- The extension fills only recognizable, non-sensitive fields and leaves demographic, identity, CAPTCHA, password, and file-upload questions for the user.
+- The user reviews every field and submits directly on the employer's site. Universal background submission is intentionally not supported.
 
 ## Screenshots
 
@@ -232,7 +240,7 @@ The tracker itself does not require external API keys.
 Optional paid integrations use user-provided keys:
 
 - `RapidAPI`
-  Used for live job search and auto-hunter
+  Used for live job search and auto-hunter. The RapidAPI account must have an active JSearch subscription; the Settings validator explains invalid-key, access, quota, and endpoint errors.
 - `Gemini`
   Used for cover letters, resume match, follow-up drafts, and company intel
 

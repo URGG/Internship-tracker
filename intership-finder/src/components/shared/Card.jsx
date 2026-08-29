@@ -2,7 +2,7 @@ import { SD } from "../../utils/constants";
 import { fmt, daysUntil, externalHref, getActionSignal, getApplicationHealth, isFollowUpDue, srcTag } from "../../utils/helpers";
 import Icon from "./Icon";
 
-export default function Card({ app, setDragId, setDragOver, openEdit }) {
+export default function Card({ app, setDragId, setDragOver, openEdit, openApplyAssist }) {
   const deadlineDays = daysUntil(app.deadline);
   const nextActionDays = daysUntil(app.next_action_date);
   const postingHref = externalHref(app.link);
@@ -41,6 +41,22 @@ export default function Card({ app, setDragId, setDragOver, openEdit }) {
           >
             <Icon name="external" size={14} />
           </a>
+        )}
+        {postingHref && (
+          <button
+            className="jcard-link"
+            type="button"
+            title="Open with Apply Assist"
+            aria-label={`Open Apply Assist for ${app.company}`}
+            draggable={false}
+            onClick={(e) => {
+              e.stopPropagation();
+              openApplyAssist(app);
+            }}
+            onPointerDown={(e) => e.stopPropagation()}
+          >
+            <Icon name="spark" size={14} />
+          </button>
         )}
       </div>
       <div className="jcard-role">

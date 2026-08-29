@@ -24,6 +24,8 @@ from main import (  # noqa: E402
     get_monthly_usage_breakdown,
     normalize_job_link,
     normalize_job_payload,
+    normalize_rapidapi_key,
+    rapidapi_error_detail,
     JobCreate,
 )
 from fastapi.testclient import TestClient
@@ -108,6 +110,25 @@ def test_job_links_remove_tracking_parameters():
     assert normalize_job_link("https://www.example.com/jobs/42/?utm_source=linkedin&ref=feed") == "https://example.com/jobs/42"
 
 
+def test_rapidapi_key_normalization_supports_common_copy_formats():
+    assert normalize_rapidapi_key("  Bearer 'rapid-key'  ") == "rapid-key"
+    assert normalize_rapidapi_key("X-RapidAPI-Key: rapid-key") == "rapid-key"
+
+
+def test_rapidapi_errors_are_actionable_and_do_not_leak_upstream_details():
+    class Response:
+        def __init__(self, status_code):
+            self.status_code = status_code
+
+    invalid_status, invalid_detail = rapidapi_error_detail(Response(401), "Job search")
+    missing_status, missing_detail = rapidapi_error_detail(Response(404), "Job search")
+
+    assert invalid_status == 400
+    assert "subscribed to JSearch" in invalid_detail
+    assert missing_status == 502
+    assert "HTTP 404" in missing_detail
+
+
 def test_api_records_events_and_exposes_authoritative_analytics():
     db = SessionLocal()
     clear_database(db)
@@ -118,6 +139,20 @@ def test_api_records_events_and_exposes_authoritative_analytics():
     login = client.post("/api/login", json={"username": "api-test", "password": "password123"})
     token = login.json()["access_token"]
     headers = {"Authorization": f"Bearer {token}"}
+
+    profile = client.put("/api/profile", headers=headers, json={
+        "first_name": "Api",
+        "last_name": "Tester",
+        "email": "api-test@example.com",
+        "phone": "555-0100",
+        "school": "State University",
+        "degree": "B.S.",
+        "major": "Computer Science",
+        "work_authorization": "Authorized to work in the United States",
+        "resume_text": "Built a student project.",
+    })
+    assert profile.status_code == 200
+    assert client.get("/api/profile", headers=headers).json()["profile"]["school"] == "State University"
 
     lead = client.post("/api/jobs", headers=headers, json={
         "company": "Lead Co", "role": "Design Intern", "status": "To Do", "source": "Search",
