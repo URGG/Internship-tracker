@@ -25,6 +25,7 @@ from main import (  # noqa: E402
     normalize_job_link,
     normalize_job_payload,
     normalize_rapidapi_key,
+    extract_jsearch_jobs,
     rapidapi_error_detail,
     JobCreate,
 )
@@ -127,6 +128,12 @@ def test_rapidapi_errors_are_actionable_and_do_not_leak_upstream_details():
     assert "subscribed to JSearch" in invalid_detail
     assert missing_status == 502
     assert "HTTP 404" in missing_detail
+
+
+def test_jsearch_search_v2_response_shape_is_normalized():
+    job = {"job_id": "job-1", "job_title": "Software Engineer"}
+    assert extract_jsearch_jobs({"status": "OK", "data": {"cursor": "next", "jobs": [job]}}) == [job]
+    assert extract_jsearch_jobs({"status": "OK", "data": [job]}) == [job]
 
 
 def test_api_records_events_and_exposes_authoritative_analytics():

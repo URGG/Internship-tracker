@@ -1177,6 +1177,18 @@ def normalize_rapidapi_key(value: Optional[str]) -> str:
             break
     return key.strip().strip("\"'").strip()
 
+JSEARCH_HOST = "jsearch.p.rapidapi.com"
+JSEARCH_SEARCH_URL = f"https://{JSEARCH_HOST}/search-v2"
+
+def extract_jsearch_jobs(payload) -> list:
+    """Read both the current search-v2 and legacy JSearch response shapes."""
+    if not isinstance(payload, dict):
+        return []
+    data = payload.get("data", [])
+    if isinstance(data, dict):
+        data = data.get("jobs", data.get("data", []))
+    return data if isinstance(data, list) else []
+
 def rapidapi_error_detail(response, operation: str):
     """Turn upstream RapidAPI statuses into safe, actionable application errors."""
     status = response.status_code
@@ -1212,10 +1224,10 @@ def validate_rapidapi_key(api_key: str):
     api_key = normalize_rapidapi_key(api_key)
     try:
         response = requests.get(
-            "https://jsearch.p.rapidapi.com/search",
+            JSEARCH_SEARCH_URL,
             headers={
                 "X-RapidAPI-Key": api_key,
-                "X-RapidAPI-Host": "jsearch.p.rapidapi.com",
+                "X-RapidAPI-Host": JSEARCH_HOST,
             },
             params={
                 "query": "software engineering intern in Remote",
@@ -1231,6 +1243,15 @@ def validate_rapidapi_key(api_key: str):
 
     if response.status_code >= 400:
         raise_rapidapi_error(response, "RapidAPI key validation")
+
+    try:
+        payload = response.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="RapidAPI validation returned an invalid response from JSearch. Try again shortly.")
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=502, detail="RapidAPI validation returned an invalid response from JSearch. Try again shortly.")
+    if str(payload.get("status", "")).upper() in {"ERROR", "FAILED"}:
+        raise HTTPException(status_code=502, detail="RapidAPI validation reached JSearch, but JSearch rejected the request.")
 
 def generate_gemini_content(api_key: str, prompt: str, schema: Optional[dict] = None, temperature: float = 0.4) -> str:
     if google_genai and google_genai_types:
@@ -2358,7 +2379,7 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
         raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
     user_rapid_key = normalize_rapidapi_key(user_rapid_key)
 
-    url = "https://jsearch.p.rapidapi.com/search"
+    url = JSEARCH_SEARCH_URL
     params = {
         "query": f"{query} in {location}",
         "page": "1",
@@ -2368,7 +2389,7 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
     }
     headers = {
         "X-RapidAPI-Key": user_rapid_key,
-        "X-RapidAPI-Host": "jsearch.p.rapidapi.com"
+        "X-RapidAPI-Host": JSEARCH_HOST
     }
 
     try:
@@ -2385,9 +2406,7 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
         if str(payload.get("status", "")).upper() in {"ERROR", "FAILED"}:
             raise HTTPException(status_code=502, detail="RapidAPI rejected the job search. Check your JSearch subscription and try again.")
 
-        data = payload.get("data", [])
-        if not isinstance(data, list):
-            data = []
+        data = extract_jsearch_jobs(payload)
         results = []
         for j in data:
             result_link = j.get("job_apply_link") or j.get("job_google_link")
@@ -2663,14 +2682,14 @@ def run_hunter(request: Request, workspace: Organization = Depends(get_current_w
     for sub in subs:
         if sub.job_type not in VALID_JOB_TYPES:
             continue
-        url = "https://jsearch.p.rapidapi.com/search"
+        url = JSEARCH_SEARCH_URL
         params = {"query": f"{sub.query} in {sub.location}", "page": "1", "num_pages": "1", "date_posted": "week", "employment_types": sub.job_type}
-        headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": "jsearch.p.rapidapi.com"}
+        headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": JSEARCH_HOST}
 
         try:
             response = requests.get(url, headers=headers, params=params, timeout=10)
             if response.status_code == 200:
-                data = response.json().get("data", [])
+                data = extract_jsearch_jobs(response.json())
                 for j in data:
                     link = j.get("job_apply_link") or j.get("job_google_link")
                     normalized_link = normalize_job_link(link)
