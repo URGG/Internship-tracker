@@ -1,7 +1,9 @@
 from logging.config import fileConfig
 import os
+from pathlib import Path
 
 from alembic import context
+from dotenv import load_dotenv
 from sqlalchemy import engine_from_config, pool
 
 
@@ -9,6 +11,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 database_url = os.getenv("DATABASE_URL") or config.get_main_option("sqlalchemy.url")
 config.set_main_option("sqlalchemy.url", database_url.replace("%", "%%"))
 target_metadata = None

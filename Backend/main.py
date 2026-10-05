@@ -8,10 +8,12 @@ import re
 import uuid
 from html import unescape
 from ipaddress import ip_address
+from pathlib import Path
 from socket import getaddrinfo
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, inspect, text
@@ -41,7 +43,10 @@ except ImportError:
 
 legacy_genai = None
 
-load_dotenv()
+BACKEND_DIR = Path(__file__).resolve().parent
+# Load the backend environment next to this file so both
+# `uvicorn main:app` and `uvicorn Backend.main:app` work.
+load_dotenv(BACKEND_DIR / ".env")
 
 JWT_SECRET = os.getenv("JWT_SECRET")
 ALGORITHM = "HS256"
@@ -75,6 +80,7 @@ STRIPE_SECRET_KEY = os.getenv("STRIPE_SECRET_KEY")
 STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 STRIPE_PRO_MONTHLY_PRICE_ID = os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID")
 STRIPE_LIFETIME_PRICE_ID = os.getenv("STRIPE_LIFETIME_PRICE_ID")
+SERVER_RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY")
 TURNSTILE_EXPECTED_HOSTNAME = os.getenv("TURNSTILE_EXPECTED_HOSTNAME")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
@@ -107,8 +113,11 @@ if APP_ENV == "production" and not SQLALCHEMY_DATABASE_URL:
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
+if SQLALCHEMY_DATABASE_URL and "postgresql://" in SQLALCHEMY_DATABASE_URL and "sslmode=" not in SQLALCHEMY_DATABASE_URL:
+    SQLALCHEMY_DATABASE_URL += "&sslmode=require" if "?" in SQLALCHEMY_DATABASE_URL else "?sslmode=require"
+
 if not SQLALCHEMY_DATABASE_URL:
-    SQLALCHEMY_DATABASE_URL = "sqlite:///./intern_tracker.db"
+    SQLALCHEMY_DATABASE_URL = f"sqlite:///{(BACKEND_DIR / 'intern_tracker.db').as_posix()}"
 
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
     engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args={"check_same_thread": False}, pool_pre_ping=True)
@@ -1177,6 +1186,25 @@ def normalize_rapidapi_key(value: Optional[str]) -> str:
             break
     return key.strip().strip("\"'").strip()
 
+def get_rapidapi_key(current_user: User) -> str:
+    """Use a user's key first, then an optional backend-managed key."""
+    if current_user.enc_rapid_key:
+        try:
+            return normalize_rapidapi_key(cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode())
+        except InvalidToken:
+            raise HTTPException(
+                status_code=400,
+                detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.",
+            )
+
+    server_key = normalize_rapidapi_key(SERVER_RAPIDAPI_KEY)
+    if server_key:
+        return server_key
+    raise HTTPException(
+        status_code=400,
+        detail="Live job search is not configured. Add a RapidAPI key in Settings or set RAPIDAPI_KEY on the backend.",
+    )
+
 JSEARCH_HOST = "jsearch.p.rapidapi.com"
 JSEARCH_SEARCH_URL = f"https://{JSEARCH_HOST}/search-v2"
 
@@ -1188,6 +1216,19 @@ def extract_jsearch_jobs(payload) -> list:
     if isinstance(data, dict):
         data = data.get("jobs", data.get("data", []))
     return data if isinstance(data, list) else []
+
+def build_jsearch_params(query: str, location: str, date_posted: Optional[str] = None, employment_type: Optional[str] = None) -> dict:
+    """Build JSearch params without sending empty optional filters."""
+    params = {
+        "query": f"{query} in {location}",
+        "page": "1",
+        "num_pages": "1",
+    }
+    if date_posted:
+        params["date_posted"] = date_posted
+    if employment_type:
+        params["employment_types"] = employment_type
+    return params
 
 def rapidapi_error_detail(response, operation: str):
     """Turn upstream RapidAPI statuses into safe, actionable application errors."""
@@ -1597,28 +1638,35 @@ def scrape_job_posting(url: str) -> dict:
 
 @app.get("/api/health")
 def health(db: Session = Depends(get_db)):
+    required_tables = [
+        "users",
+        "organizations",
+        "organization_members",
+        "organization_invitations",
+        "applications",
+        "search_subscriptions",
+        "application_events",
+        "usage_events",
+    ]
+    schema = {table_name: False for table_name in required_tables}
     try:
         db.execute(text("SELECT 1"))
-        database = "ok"
-    except Exception:
+        inspector = inspect(db.bind)
+        schema = {table_name: inspector.has_table(table_name) for table_name in required_tables}
+        database = "ok" if all(schema.values()) else "degraded"
+    except Exception as exc:
+        logger.exception("Database health check failed: %s", exc)
         database = "error"
 
-    inspector = inspect(engine)
-    schema = {
-        "organizations": inspector.has_table("organizations"),
-        "organization_members": inspector.has_table("organization_members"),
-        "organization_invitations": inspector.has_table("organization_invitations"),
-        "application_events": inspector.has_table("application_events"),
-        "usage_events": inspector.has_table("usage_events"),
-    }
-    if database == "ok" and not all(schema.values()):
-        database = "degraded"
-
-    return {
+    payload = {
         "status": "ok" if database == "ok" else "degraded",
         "database": database,
         "database_backend": engine.dialect.name,
         "schema": schema,
+        "job_search": {
+            "provider": "jsearch",
+            "configured": bool(normalize_rapidapi_key(SERVER_RAPIDAPI_KEY)),
+        },
         "stripe": {
             "enabled": bool(stripe and STRIPE_SECRET_KEY),
             "webhook_configured": bool(STRIPE_WEBHOOK_SECRET),
@@ -1633,6 +1681,7 @@ def health(db: Session = Depends(get_db)):
         "gemini_model": GEMINI_MODEL,
         "environment": APP_ENV,
     }
+    return JSONResponse(status_code=200 if database == "ok" else 503, content=payload)
 
 @app.post("/api/signup")
 def signup(user: UserAuth, request: Request, db: Session = Depends(get_db)):
@@ -2360,8 +2409,6 @@ def autofill_job_link(req: AutofillRequest, current_user: User = Depends(get_cur
 
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, request: Request, workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not current_user.enc_rapid_key:
-        raise HTTPException(status_code=400, detail="Add RapidAPI Key in Settings first")
     query = (query or "").strip()[:120]
     location = (location or "").strip()[:120]
     if not query or not location:
@@ -2373,20 +2420,10 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
     if datePosted not in VALID_DATE_POSTED:
         raise HTTPException(status_code=400, detail="Invalid date filter")
 
-    try:
-        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
-    except InvalidToken:
-        raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
-    user_rapid_key = normalize_rapidapi_key(user_rapid_key)
+    user_rapid_key = get_rapidapi_key(current_user)
 
     url = JSEARCH_SEARCH_URL
-    params = {
-        "query": f"{query} in {location}",
-        "page": "1",
-        "num_pages": "1",
-        "date_posted": datePosted,
-        "employment_types": jobType
-    }
+    params = build_jsearch_params(query, location, datePosted, jobType)
     headers = {
         "X-RapidAPI-Key": user_rapid_key,
         "X-RapidAPI-Host": JSEARCH_HOST
@@ -2409,6 +2446,8 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
         data = extract_jsearch_jobs(payload)
         results = []
         for j in data:
+            if not isinstance(j, dict):
+                continue
             result_link = j.get("job_apply_link") or j.get("job_google_link")
             result_company = bounded_text(j.get("employer_name"), 160) or "Unknown"
             result_role = bounded_text(j.get("job_title"), 200) or "Role"
@@ -2655,14 +2694,7 @@ def del_sub(sub_id: int, workspace: Organization = Depends(get_current_workspace
 @app.post("/api/hunter/run")
 def run_hunter(request: Request, workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     require_workspace_role(db, workspace, current_user.id, EDIT_WORKSPACE_ROLES)
-    if not current_user.enc_rapid_key:
-        raise HTTPException(status_code=400, detail="Add RapidAPI Key in Settings first")
-
-    try:
-        user_rapid_key = cipher_suite.decrypt(current_user.enc_rapid_key.encode()).decode()
-    except InvalidToken:
-        raise HTTPException(status_code=400, detail="Stored RapidAPI key could not be decrypted. Re-save your RapidAPI key in Settings.")
-    user_rapid_key = normalize_rapidapi_key(user_rapid_key)
+    user_rapid_key = get_rapidapi_key(current_user)
 
     subs = db.query(SearchSubscription).filter(SearchSubscription.organization_id == workspace.id).all()
 
@@ -2683,7 +2715,7 @@ def run_hunter(request: Request, workspace: Organization = Depends(get_current_w
         if sub.job_type not in VALID_JOB_TYPES:
             continue
         url = JSEARCH_SEARCH_URL
-        params = {"query": f"{sub.query} in {sub.location}", "page": "1", "num_pages": "1", "date_posted": "week", "employment_types": sub.job_type}
+        params = build_jsearch_params(sub.query, sub.location, "week", sub.job_type)
         headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": JSEARCH_HOST}
 
         try:

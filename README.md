@@ -187,8 +187,11 @@ Optional:
 - `STRIPE_LIFETIME_PRICE_ID`
 - `TURNSTILE_SECRET_KEY` to require Cloudflare Turnstile verification on signup and login
 - `TURNSTILE_EXPECTED_HOSTNAME` to restrict verification to the deployed frontend hostname
+- `RAPIDAPI_KEY` is optional; leave it unset when each user enters their own key in Settings
 
 If `DATABASE_URL` is not set, the backend falls back to a local SQLite database for development. Use Postgres or another managed SQL database in production.
+
+For local development, use the ignored `Backend/.env` file with development values for `JWT_SECRET` and `ENCRYPTION_KEY`. The app loads it relative to `Backend/main.py`, so it works regardless of whether Uvicorn is started from the repository root or from `Backend/`. Render does not use this local file: set the production Supabase `DATABASE_URL`, secrets, and CORS values in the Render service environment. Live job search can use a user's RapidAPI key entered in Settings.
 
 ### Render deployment checklist
 
@@ -201,6 +204,8 @@ Set these environment variables on the Render backend service before deploying:
 - `JWT_SECRET` and `ENCRYPTION_KEY` set to stable, long-lived secrets
 - `JWT_TTL_DAYS` can be set to control access-token lifetime; the default is 7 days
 - `TURNSTILE_SECRET_KEY` and `TURNSTILE_EXPECTED_HOSTNAME` if bot protection is enabled
+
+Recommended Render service settings are `Root Directory: Backend`, `Build Command: pip install -r requirements.txt`, `Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT`, and `Health Check Path: /api/health`. Copy the complete Postgres connection string from Supabase Project Settings > Database > Connect into Render's `DATABASE_URL`; do not use the frontend Supabase URL or anon key. The included `render.yaml` is a secret-free Blueprint template for these settings.
 
 After deployment, open `/api/health`. A healthy production response should report `database: "ok"`, `database_backend: "postgresql"`, `environment: "production"`, and all schema flags as `true`. If built-in paid AI is enabled, it should also report `server_gemini_configured: true`.
 
