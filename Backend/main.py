@@ -2,6 +2,7 @@ import os
 import logging
 import requests
 import secrets
+import time
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 import re
@@ -1214,6 +1215,10 @@ def get_rapidapi_key(current_user: User) -> str:
 
 JSEARCH_HOST = "jsearch.p.rapidapi.com"
 JSEARCH_SEARCH_URL = f"https://{JSEARCH_HOST}/search-v2"
+try:
+    RAPIDAPI_TIMEOUT_SECONDS = max(10, int(os.getenv("RAPIDAPI_TIMEOUT_SECONDS", "30")))
+except (TypeError, ValueError):
+    RAPIDAPI_TIMEOUT_SECONDS = 30
 
 def extract_jsearch_jobs(payload) -> list:
     """Read both the current search-v2 and legacy JSearch response shapes."""
@@ -1236,6 +1241,37 @@ def build_jsearch_params(query: str, location: str, date_posted: Optional[str] =
     if employment_type:
         params["employment_types"] = employment_type
     return params
+
+def request_jsearch(operation: str, api_key: str, params: dict):
+    """Call JSearch with a bounded retry for transient upstream timeouts."""
+    headers = {
+        "X-RapidAPI-Key": api_key,
+        "X-RapidAPI-Host": JSEARCH_HOST,
+    }
+    for attempt in range(2):
+        try:
+            response = requests.get(
+                JSEARCH_SEARCH_URL,
+                headers=headers,
+                params=params,
+                timeout=(5, RAPIDAPI_TIMEOUT_SECONDS),
+            )
+            if response.status_code >= 500 and attempt == 0:
+                time.sleep(0.75)
+                continue
+            return response
+        except requests.Timeout:
+            if attempt == 0:
+                time.sleep(0.75)
+                continue
+            raise HTTPException(
+                status_code=504,
+                detail=f"{operation} timed out while contacting JSearch. Try again shortly or check your RapidAPI JSearch subscription.",
+            )
+        except requests.RequestException as exc:
+            raise HTTPException(status_code=502, detail=f"{operation} request failed: {str(exc)}")
+
+    raise HTTPException(status_code=502, detail=f"{operation} is temporarily unavailable. Try again shortly.")
 
 def rapidapi_error_detail(response, operation: str):
     """Turn upstream RapidAPI statuses into safe, actionable application errors."""
@@ -1270,24 +1306,11 @@ def validate_gemini_key(api_key: str):
 
 def validate_rapidapi_key(api_key: str):
     api_key = normalize_rapidapi_key(api_key)
-    try:
-        response = requests.get(
-            JSEARCH_SEARCH_URL,
-            headers={
-                "X-RapidAPI-Key": api_key,
-                "X-RapidAPI-Host": JSEARCH_HOST,
-            },
-            params={
-                "query": "software engineering intern in Remote",
-                "page": "1",
-                "num_pages": "1",
-                "date_posted": "today",
-                "employment_types": "INTERN",
-            },
-            timeout=10,
-        )
-    except requests.RequestException as exc:
-        raise HTTPException(status_code=502, detail=f"RapidAPI validation request failed: {str(exc)}")
+    response = request_jsearch(
+        "RapidAPI key validation",
+        api_key,
+        build_jsearch_params("software engineering intern", "Remote", "today", "INTERN"),
+    )
 
     if response.status_code >= 400:
         raise_rapidapi_error(response, "RapidAPI key validation")
@@ -2429,15 +2452,9 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
 
     user_rapid_key = get_rapidapi_key(current_user)
 
-    url = JSEARCH_SEARCH_URL
     params = build_jsearch_params(query, location, datePosted, jobType)
-    headers = {
-        "X-RapidAPI-Key": user_rapid_key,
-        "X-RapidAPI-Host": JSEARCH_HOST
-    }
-
     try:
-        response = requests.get(url, headers=headers, params=params, timeout=10)
+        response = request_jsearch("Job search", user_rapid_key, params)
         if response.status_code != 200:
             raise_rapidapi_error(response, "Job search")
 
@@ -2477,8 +2494,6 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
         return results
     except HTTPException:
         raise
-    except requests.RequestException as e:
-        raise HTTPException(status_code=502, detail=f"RapidAPI request failed: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2721,12 +2736,10 @@ def run_hunter(request: Request, workspace: Organization = Depends(get_current_w
     for sub in subs:
         if sub.job_type not in VALID_JOB_TYPES:
             continue
-        url = JSEARCH_SEARCH_URL
         params = build_jsearch_params(sub.query, sub.location, "week", sub.job_type)
-        headers = {"X-RapidAPI-Key": user_rapid_key, "X-RapidAPI-Host": JSEARCH_HOST}
 
         try:
-            response = requests.get(url, headers=headers, params=params, timeout=10)
+            response = request_jsearch("Auto-hunter search", user_rapid_key, params)
             if response.status_code == 200:
                 data = extract_jsearch_jobs(response.json())
                 for j in data:
