@@ -113,7 +113,14 @@ if APP_ENV == "production" and not SQLALCHEMY_DATABASE_URL:
 if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgres://"):
     SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-if SQLALCHEMY_DATABASE_URL and "postgresql://" in SQLALCHEMY_DATABASE_URL and "sslmode=" not in SQLALCHEMY_DATABASE_URL:
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql://"):
+    # SQLAlchemy 2.1 defaults bare PostgreSQL URLs to psycopg (v3), while
+    # this project installs psycopg2-binary for Render compatibility.
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+elif SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("postgresql+psycopg://"):
+    SQLALCHEMY_DATABASE_URL = SQLALCHEMY_DATABASE_URL.replace("postgresql+psycopg://", "postgresql+psycopg2://", 1)
+
+if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith(("postgresql://", "postgresql+")) and "sslmode=" not in SQLALCHEMY_DATABASE_URL:
     SQLALCHEMY_DATABASE_URL += "&sslmode=require" if "?" in SQLALCHEMY_DATABASE_URL else "?sslmode=require"
 
 if not SQLALCHEMY_DATABASE_URL:
