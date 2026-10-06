@@ -289,7 +289,7 @@ export default function SettingsPage({
           <input type="password" value={rKey} onChange={(e) => setRKey(e.target.value)} placeholder="Paste JSearch key here..." autoComplete="off" spellCheck="false" />
         </div>
         <div className="note" style={{ marginBottom: 14 }}>
-          Used for: live job search and auto-hunter. Paste the raw RapidAPI key (without “Bearer ”). Saving runs a small JSearch validation request.
+          Used for: JSearch live search and auto-hunter. Paste the raw RapidAPI key (without “Bearer ”). Saving runs a small JSearch validation request. USAJOBS results can be enabled by the service administrator.
         </div>
         <div className="srow">
           <label>Gemini API Key</label>

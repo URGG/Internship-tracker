@@ -1,6 +1,6 @@
 export const STATUSES = ["To Do", "Applied", "Interview", "Offer", "Rejected"];
 export const KCOLS = [...STATUSES];
-export const SOURCES = ["LinkedIn", "Indeed", "Handshake", "Search", "Auto-Hunter", "Extension", "Other"];
+export const SOURCES = ["LinkedIn", "Indeed", "Handshake", "JSearch", "USAJOBS", "Search", "Auto-Hunter", "Extension", "Other"];
 export const INTERVIEW_STAGES = ["", "Online Assessment", "Recruiter Screen", "Technical", "Behavioral", "Final Round", "Take Home"];
 
 export const JOB_TYPES = [
@@ -21,7 +21,7 @@ export const DATE_OPTS = [
 
 export const SP = { "To Do": "sw", Applied: "sa", Interview: "si", Offer: "so", Rejected: "sr" };
 export const SD = { "To Do": "d-W", Applied: "d-A", Interview: "d-I", Offer: "d-O", Rejected: "d-R" };
-export const ST = { LinkedIn: "t-li", Indeed: "t-in", Handshake: "t-hs", Search: "t-ot", "Auto-Hunter": "t-ot", Other: "t-ot" };
+export const ST = { LinkedIn: "t-li", Indeed: "t-in", Handshake: "t-hs", JSearch: "t-ot", USAJOBS: "t-ot", Search: "t-ot", "Auto-Hunter": "t-ot", Other: "t-ot" };
 
 export const BLANK = {
   company: "",
@@ -45,4 +45,10 @@ export const BLANK = {
   cover_letter_version: "",
   application_packet: "",
   activity_log: "[]",
+  provider: "",
+  provider_job_id: "",
+  source_url: "",
+  source_attribution: "",
+  source_terms_url: "",
+  content_fetched_at: "",
 };

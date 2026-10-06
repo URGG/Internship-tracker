@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { getActionSignal, uid } from "./utils/helpers";
-import { API_BASE, TURNSTILE_SITE_KEY } from "./config";
+import { API_BASE, PRIVACY_URL, PRIVACY_VERSION, TERMS_URL, TERMS_VERSION, TURNSTILE_SITE_KEY } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import LandingPage from "./pages/LandingPage";
@@ -108,6 +108,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
+  const [legalAccepted, setLegalAccepted] = useState(false);
   const turnstileRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -120,6 +121,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
       setEmail("");
       setPass("");
       setTurnstileToken("");
+      setLegalAccepted(false);
       setShowPassword(false);
       setError("");
     }
@@ -171,6 +173,10 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (isSignUp && !legalAccepted) {
+      setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
     setLoading(true);
     const endpoint = isSignUp ? "/signup" : "/login";
 
@@ -178,7 +184,16 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
       const res = await fetch(`${API_BASE}${endpoint}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username: user || null, email: isSignUp ? email : null, password: pass, turnstile_token: turnstileToken || null }),
+        body: JSON.stringify({
+          username: user || null,
+          email: isSignUp ? email : null,
+          password: pass,
+          turnstile_token: turnstileToken || null,
+          terms_accepted: isSignUp ? legalAccepted : false,
+          privacy_accepted: isSignUp ? legalAccepted : false,
+          terms_version: isSignUp ? TERMS_VERSION : null,
+          privacy_version: isSignUp ? PRIVACY_VERSION : null,
+        }),
       });
       const data = await res.json();
 
@@ -245,6 +260,12 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
             </span>
           </div>
           {error && <div className="auth-error" id="auth-error" role="alert">{error}</div>}
+          {isSignUp && (
+            <label style={{ display: "flex", alignItems: "flex-start", gap: 9, fontSize: 11, lineHeight: 1.5, color: "var(--txt2)" }}>
+              <input type="checkbox" checked={legalAccepted} onChange={(event) => setLegalAccepted(event.target.checked)} style={{ marginTop: 2 }} />
+              <span>I agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer">Terms of Service</a> and <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy Policy</a>.</span>
+            </label>
+          )}
           {TURNSTILE_SITE_KEY && <div className="auth-turnstile" ref={turnstileRef} />}
           <button className="mbtn mbtn-p auth-submit" type="submit" disabled={loading} aria-busy={loading}>
             {loading ? "Signing you in..." : isSignUp ? "Create account" : "Sign in"}
@@ -253,7 +274,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
 
         <div className="auth-switch-row">
           {isSignUp ? "Have an account? " : "Need an account? "}
-          <button className="auth-switch" type="button" onClick={() => { setError(""); setIsSignUp(!isSignUp); }}>
+          <button className="auth-switch" type="button" onClick={() => { setError(""); setLegalAccepted(false); setIsSignUp(!isSignUp); }}>
             {isSignUp ? "Log in" : "Sign up"}
           </button>
         </div>
@@ -1024,6 +1045,12 @@ export default function App() {
       location: r.location,
       remote: r.remote,
       link: r.link,
+      provider: r.provider || "",
+      provider_job_id: r.provider_job_id || "",
+      source_url: r.source_url || r.link || "",
+      source_attribution: r.source_attribution || "",
+      source_terms_url: r.source_terms_url || "",
+      content_fetched_at: r.fetched_at || "",
       notes: `${(r.desc || "").slice(0, 100)}...`,
       next_action_date: new Date().toISOString().slice(0, 10),
     };

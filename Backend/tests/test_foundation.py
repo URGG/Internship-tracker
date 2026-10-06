@@ -26,6 +26,8 @@ from main import (  # noqa: E402
     normalize_job_payload,
     normalize_rapidapi_key,
     extract_jsearch_jobs,
+    build_search_result,
+    deduplicate_search_results,
     rapidapi_error_detail,
     JobCreate,
 )
@@ -134,6 +136,28 @@ def test_jsearch_search_v2_response_shape_is_normalized():
     job = {"job_id": "job-1", "job_title": "Software Engineer"}
     assert extract_jsearch_jobs({"status": "OK", "data": {"cursor": "next", "jobs": [job]}}) == [job]
     assert extract_jsearch_jobs({"status": "OK", "data": [job]}) == [job]
+
+
+def test_provider_results_are_normalized_and_deduplicated_across_sources():
+    first = build_search_result(
+        provider="JSearch",
+        provider_job_id="j-1",
+        company="Acme",
+        role="Software Intern",
+        location="Remote",
+        remote=True,
+        posted="2026-10-06T00:00:00Z",
+        link="https://jobs.example.com/1/?utm_source=test",
+        source_url="https://jobs.example.com/1",
+        description="Build things.",
+        source_terms_url="https://example.com/terms",
+        source_attribution="JSearch",
+    )
+    duplicate = {**first, "provider": "usajobs", "source": "USAJOBS", "_id": "USAJOBS:1"}
+    results = deduplicate_search_results([first, duplicate])
+    assert len(results) == 1
+    assert results[0]["link"] == "https://jobs.example.com/1"
+    assert results[0]["fetched_at"]
 
 
 def test_api_records_events_and_exposes_authoritative_analytics():

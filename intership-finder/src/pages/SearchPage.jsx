@@ -42,7 +42,10 @@ export default function SearchPage({
       <div className="panel">
         <div className="panel-head">
           <h2>Job search</h2>
-          <span className="panel-sub">Search live jobs through the connected backend</span>
+          <span className="panel-sub">Search connected job providers in one place</span>
+        </div>
+        <div className="note" style={{ margin: "0 22px", fontSize: 11 }}>
+          Searches send only your keywords, location, and filters to the providers configured by the service. Results keep their source attribution and link you to the original listing.
         </div>
 
         <div className="sf-grid">
@@ -120,6 +123,11 @@ export default function SearchPage({
                       {r.location && <span className="rloc">Location: {r.location}</span>}
                       {r.posted && <span className="rloc">| {r.posted}</span>}
                     </div>
+                    {r.source_attribution && (
+                      <div style={{ fontSize: 10, color: "var(--txt3)", marginTop: 7 }}>
+                        {r.source_terms_url ? <a href={r.source_terms_url} target="_blank" rel="noreferrer">{r.source_attribution}</a> : r.source_attribution}
+                      </div>
+                    )}
                   </div>
                   <div className="racts">
                     {r.link && <a className="rbtn" href={r.link} target="_blank" rel="noreferrer"><Icon name="external" size={14} /> View</a>}

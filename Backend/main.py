@@ -3,6 +3,8 @@ import logging
 import requests
 import secrets
 import time
+import hashlib
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
 import re
@@ -17,7 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
-from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, inspect, text
+from sqlalchemy import create_engine, Column, Integer, String, Boolean, ForeignKey, Text, UniqueConstraint, inspect, text
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 import jwt
 import bcrypt
@@ -82,10 +84,23 @@ STRIPE_WEBHOOK_SECRET = os.getenv("STRIPE_WEBHOOK_SECRET")
 STRIPE_PRO_MONTHLY_PRICE_ID = os.getenv("STRIPE_PRO_MONTHLY_PRICE_ID")
 STRIPE_LIFETIME_PRICE_ID = os.getenv("STRIPE_LIFETIME_PRICE_ID")
 SERVER_RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
+USAJOBS_API_KEY = os.getenv("USAJOBS_API_KEY")
+USAJOBS_USER_AGENT = os.getenv("USAJOBS_USER_AGENT")
 TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY")
 TURNSTILE_EXPECTED_HOSTNAME = os.getenv("TURNSTILE_EXPECTED_HOSTNAME")
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:5173").rstrip("/")
 CORS_ORIGINS = os.getenv("CORS_ORIGINS")
+TERMS_VERSION = os.getenv("TERMS_VERSION", "v1")
+PRIVACY_VERSION = os.getenv("PRIVACY_VERSION", "v1")
+TERMS_URL = os.getenv("TERMS_URL", f"{FRONTEND_URL}/terms")
+PRIVACY_URL = os.getenv("PRIVACY_URL", f"{FRONTEND_URL}/privacy")
+REQUIRE_LEGAL_CONSENT = os.getenv("REQUIRE_LEGAL_CONSENT", "true" if APP_ENV == "production" else "false").lower() == "true"
+
+JSEARCH_TERMS_URL = os.getenv(
+    "JSEARCH_TERMS_URL",
+    "https://rapidapi.com/letscrape-6bRBa3QguO5/api/jsearch",
+)
+USAJOBS_TERMS_URL = "https://developer.usajobs.gov/apirequest/index"
 
 if APP_ENV == "production" and FRONTEND_URL.startswith(("http://localhost", "http://127.0.0.1")):
     raise RuntimeError("CRITICAL: FRONTEND_URL must be your deployed frontend URL in production.")
@@ -206,6 +221,26 @@ class JobApplication(Base):
     cover_letter_version = Column(String, nullable=True)
     application_packet = Column(Text, nullable=True)
     activity_log = Column(Text, nullable=True)
+    provider = Column(String, nullable=True, index=True)
+    provider_job_id = Column(String, nullable=True, index=True)
+    source_url = Column(String, nullable=True)
+    source_attribution = Column(String, nullable=True)
+    source_terms_url = Column(String, nullable=True)
+    content_fetched_at = Column(String, nullable=True)
+
+class LegalAcceptance(Base):
+    __tablename__ = "legal_acceptances"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    terms_version = Column(String, nullable=False)
+    privacy_version = Column(String, nullable=False)
+    accepted_at = Column(String, nullable=False)
+    ip_hash = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    consent_source = Column(String, default="signup")
+    __table_args__ = (
+        UniqueConstraint("user_id", "terms_version", "privacy_version", name="uq_legal_acceptance_version"),
+    )
 
 class SearchSubscription(Base):
     __tablename__ = "search_subscriptions"
@@ -268,6 +303,10 @@ class UserAuth(BaseModel):
     password: str
     email: Optional[str] = None
     turnstile_token: Optional[str] = None
+    terms_accepted: bool = False
+    privacy_accepted: bool = False
+    terms_version: Optional[str] = None
+    privacy_version: Optional[str] = None
 
 class KeysUpdate(BaseModel):
     rapid_key: Optional[str] = None
@@ -329,6 +368,12 @@ class JobCreate(BaseModel):
     cover_letter_version: Optional[str] = None
     application_packet: Optional[str] = None
     activity_log: Optional[str] = None
+    provider: Optional[str] = None
+    provider_job_id: Optional[str] = None
+    source_url: Optional[str] = None
+    source_attribution: Optional[str] = None
+    source_terms_url: Optional[str] = None
+    content_fetched_at: Optional[str] = None
 
 class JobImportRequest(BaseModel):
     jobs: List[JobCreate]
@@ -431,6 +476,12 @@ def ensure_job_application_columns():
         "cover_letter_version": "VARCHAR",
         "application_packet": "TEXT",
         "activity_log": "TEXT",
+        "provider": "VARCHAR",
+        "provider_job_id": "VARCHAR",
+        "source_url": "VARCHAR",
+        "source_attribution": "VARCHAR",
+        "source_terms_url": "VARCHAR",
+        "content_fetched_at": "VARCHAR",
     }
 
     if not existing_columns:
@@ -512,6 +563,7 @@ def ensure_production_indexes():
         "CREATE INDEX IF NOT EXISTS ix_usage_events_user_category_date ON usage_events (user_id, category, created_at)",
         "CREATE INDEX IF NOT EXISTS ix_applications_user_status ON applications (user_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_applications_organization_status ON applications (organization_id, status)",
+        "CREATE INDEX IF NOT EXISTS ix_applications_provider_job_id ON applications (provider, provider_job_id)",
         "CREATE INDEX IF NOT EXISTS ix_usage_events_organization_category_date ON usage_events (organization_id, category, created_at)",
     ]
     with engine.begin() as connection:
@@ -813,6 +865,53 @@ def add_usage_event(
 def request_id_for(request: Optional[Request]):
     return getattr(getattr(request, "state", None), "request_id", None)
 
+def legal_payload():
+    return {
+        "terms_version": TERMS_VERSION,
+        "privacy_version": PRIVACY_VERSION,
+        "terms_url": TERMS_URL,
+        "privacy_url": PRIVACY_URL,
+        "required_for_signup": REQUIRE_LEGAL_CONSENT,
+        "provider_disclosures": [
+            {
+                "provider": "JSearch",
+                "enabled": bool(normalize_rapidapi_key(SERVER_RAPIDAPI_KEY)),
+                "terms_url": JSEARCH_TERMS_URL,
+                "attribution": "Results supplied through JSearch/RapidAPI; apply at the original employer or listing site.",
+            },
+            {
+                "provider": "USAJOBS",
+                "enabled": bool(USAJOBS_API_KEY and USAJOBS_USER_AGENT),
+                "terms_url": USAJOBS_TERMS_URL,
+                "attribution": "Federal job announcements supplied by USAJOBS; view and apply on USAJOBS.",
+            },
+        ],
+    }
+
+def hash_client_ip(request: Request) -> Optional[str]:
+    client_host = getattr(getattr(request, "client", None), "host", None)
+    if not client_host:
+        return None
+    return hashlib.sha256(f"{JWT_SECRET}:{client_host}".encode()).hexdigest()
+
+def record_legal_acceptance(db: Session, user: User, request: Request):
+    existing = db.query(LegalAcceptance).filter(
+        LegalAcceptance.user_id == user.id,
+        LegalAcceptance.terms_version == TERMS_VERSION,
+        LegalAcceptance.privacy_version == PRIVACY_VERSION,
+    ).first()
+    if existing:
+        return
+    db.add(LegalAcceptance(
+        user_id=user.id,
+        terms_version=TERMS_VERSION,
+        privacy_version=PRIVACY_VERSION,
+        accepted_at=utc_now_iso(),
+        ip_hash=hash_client_ip(request),
+        user_agent=(request.headers.get("user-agent") or "")[:500] or None,
+        consent_source="signup",
+    ))
+
 def add_application_event(
     db: Session,
     user_id: int,
@@ -926,12 +1025,21 @@ def normalize_job_link(value: Optional[str]) -> Optional[str]:
     query = urlencode(sorted(query_items))
     return urlunparse((scheme, netloc, path, "", query, ""))
 
+def safe_provider_url(value: Optional[str]) -> Optional[str]:
+    normalized = normalize_job_link(value)
+    if not normalized:
+        return None
+    parsed = urlparse(normalized)
+    return normalized if parsed.scheme in {"http", "https"} and parsed.netloc else None
+
 def normalize_job_payload(job: JobCreate):
     payload = model_to_dict(job)
     payload["company"] = payload["company"].strip()
     payload["role"] = payload["role"].strip()
     payload["status"] = payload["status"].strip()
     payload["source"] = (payload["source"] or "Other").strip() or "Other"
+    for field_name in ["provider", "provider_job_id", "source_url", "source_attribution", "source_terms_url", "content_fetched_at"]:
+        payload[field_name] = (payload.get(field_name) or "").strip() or None
     payload["interview_stage"] = (payload["interview_stage"] or "").strip()
     payload["status"] = STATUS_ALIASES.get(payload["status"], payload["status"])
     payload["interview_stage"] = INTERVIEW_STAGE_ALIASES.get(payload["interview_stage"], payload["interview_stage"])
@@ -979,11 +1087,19 @@ def normalize_job_payload(job: JobCreate):
         "cover_letter_version": 120,
         "application_packet": 50000,
         "link": 2048,
+        "provider": 80,
+        "provider_job_id": 240,
+        "source_url": 2048,
+        "source_attribution": 240,
+        "source_terms_url": 2048,
+        "content_fetched_at": 64,
     }.items():
         if payload.get(key) and len(payload[key]) > max_length:
             raise HTTPException(status_code=400, detail=f"{key.replace('_', ' ').capitalize()} is too long")
 
     payload["link"] = normalize_job_link(payload.get("link"))
+    payload["source_url"] = normalize_job_link(payload.get("source_url"))
+    payload["source_terms_url"] = normalize_job_link(payload.get("source_terms_url"))
     payload["activity_log"] = payload.get("activity_log") or None
 
     return payload
@@ -1677,6 +1793,7 @@ def health(db: Session = Depends(get_db)):
         "search_subscriptions",
         "application_events",
         "usage_events",
+        "legal_acceptances",
     ]
     schema = {table_name: False for table_name in required_tables}
     try:
@@ -1694,8 +1811,11 @@ def health(db: Session = Depends(get_db)):
         "database_backend": engine.dialect.name,
         "schema": schema,
         "job_search": {
-            "provider": "jsearch",
-            "configured": bool(normalize_rapidapi_key(SERVER_RAPIDAPI_KEY)),
+            "providers": {
+                "jsearch": bool(normalize_rapidapi_key(SERVER_RAPIDAPI_KEY)),
+                "usajobs": bool(USAJOBS_API_KEY and USAJOBS_USER_AGENT),
+            },
+            "configured": bool(normalize_rapidapi_key(SERVER_RAPIDAPI_KEY) or (USAJOBS_API_KEY and USAJOBS_USER_AGENT)),
         },
         "stripe": {
             "enabled": bool(stripe and STRIPE_SECRET_KEY),
@@ -1716,6 +1836,11 @@ def health(db: Session = Depends(get_db)):
 @app.post("/api/signup")
 def signup(user: UserAuth, request: Request, db: Session = Depends(get_db)):
     verify_turnstile(user.turnstile_token, request, "signup")
+    if REQUIRE_LEGAL_CONSENT:
+        if not user.terms_accepted or not user.privacy_accepted:
+            raise HTTPException(status_code=400, detail="You must accept the Terms of Service and Privacy Policy to create an account.")
+        if user.terms_version != TERMS_VERSION or user.privacy_version != PRIVACY_VERSION:
+            raise HTTPException(status_code=400, detail="Please refresh and accept the current Terms of Service and Privacy Policy.")
     username_seed = user.username or re.sub(r"[^a-z0-9._-]+", "-", (user.email or "").split("@")[0].lower())
     username = normalize_username(username_seed)
     email = normalize_email(user.email)
@@ -1729,8 +1854,14 @@ def signup(user: UserAuth, request: Request, db: Session = Depends(get_db)):
     db.add(new_user)
     db.flush()
     ensure_default_workspace(db, new_user)
+    if user.terms_accepted and user.privacy_accepted:
+        record_legal_acceptance(db, new_user, request)
     db.commit()
     return {"message": "Success"}
+
+@app.get("/api/legal")
+def get_legal_configuration():
+    return legal_payload()
 
 @app.post("/api/login")
 def login(user: UserAuth, request: Request, db: Session = Depends(get_db)):
@@ -2437,6 +2568,191 @@ def autofill_job_link(req: AutofillRequest, current_user: User = Depends(get_cur
     url = (req.url or "").strip()
     return scrape_job_posting(url)
 
+def iso_date_only(value: Optional[str]) -> str:
+    raw = bounded_text(value, 64)
+    if not raw:
+        return ""
+    try:
+        return datetime.fromisoformat(raw.replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return raw[:10]
+
+def build_search_result(
+    *,
+    provider: str,
+    provider_job_id: Optional[str],
+    company: str,
+    role: str,
+    location: str,
+    remote: bool,
+    posted: str,
+    link: Optional[str],
+    source_url: Optional[str],
+    description: str,
+    source_terms_url: str,
+    source_attribution: str,
+):
+    normalized_link = safe_provider_url(link)
+    external_id = bounded_text(provider_job_id, 240)
+    identity = external_id or normalized_link or f"{normalize_spaces(company)}:{normalize_spaces(role)}:{normalize_spaces(location)}"
+    return {
+        "_id": f"{provider}:{identity}",
+        "company": bounded_text(company, 160) or "Unknown",
+        "role": bounded_text(role, 200) or "Role",
+        "source": provider,
+        "provider": provider.lower(),
+        "provider_job_id": external_id or None,
+        "remote": bool(remote),
+        "location": bounded_text(location, 160),
+        "posted": bounded_text(posted, 40),
+        "link": normalized_link,
+        "source_url": safe_provider_url(source_url) or normalized_link,
+        "source_attribution": bounded_text(source_attribution, 240),
+        "source_terms_url": safe_provider_url(source_terms_url),
+        "fetched_at": utc_now_iso(),
+        "desc": bounded_text(description, 20000),
+    }
+
+def search_jsearch_provider(query: str, location: str, job_type: str, date_posted: str, current_user: User):
+    try:
+        api_key = get_rapidapi_key(current_user)
+    except HTTPException as exc:
+        if exc.status_code == 400 and "not configured" in str(exc.detail).lower():
+            return []
+        raise
+
+    response = request_jsearch(
+        "JSearch job search",
+        api_key,
+        build_jsearch_params(query, location, date_posted, job_type),
+    )
+    if response.status_code != 200:
+        raise_rapidapi_error(response, "JSearch job search")
+    try:
+        payload = response.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="JSearch returned invalid JSON. Try again shortly.")
+    if not isinstance(payload, dict) or str(payload.get("status", "")).upper() in {"ERROR", "FAILED"}:
+        raise HTTPException(status_code=502, detail="JSearch rejected the job search. Check the provider subscription and try again.")
+
+    results = []
+    for job in extract_jsearch_jobs(payload):
+        if not isinstance(job, dict):
+            continue
+        result_link = job.get("job_apply_link") or job.get("job_google_link")
+        results.append(build_search_result(
+            provider="JSearch",
+            provider_job_id=job.get("job_id"),
+            company=job.get("employer_name"),
+            role=job.get("job_title"),
+            location=f"{job.get('job_city', '')}, {job.get('job_state', '')}".strip(", "),
+            remote=job.get("job_is_remote"),
+            posted=iso_date_only(job.get("job_posted_at_datetime_utc")),
+            link=result_link,
+            source_url=result_link,
+            description=job.get("job_description", ""),
+            source_terms_url=JSEARCH_TERMS_URL,
+            source_attribution="Results supplied through JSearch/RapidAPI; apply at the original employer or listing site.",
+        ))
+    return results
+
+def request_usajobs(operation: str, params: dict):
+    headers = {
+        "Host": "data.usajobs.gov",
+        "User-Agent": USAJOBS_USER_AGENT,
+        "Authorization-Key": USAJOBS_API_KEY,
+    }
+    try:
+        response = requests.get(
+            "https://data.usajobs.gov/api/Search",
+            headers=headers,
+            params=params,
+            timeout=(5, RAPIDAPI_TIMEOUT_SECONDS),
+        )
+    except requests.Timeout:
+        raise HTTPException(status_code=504, detail=f"{operation} timed out. Try again shortly.")
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail=f"{operation} is temporarily unavailable. Try again shortly.")
+    if response.status_code in {401, 403}:
+        raise HTTPException(status_code=400, detail="USAJOBS rejected the configured API key. Check the key and registered user-agent email.")
+    if response.status_code == 429:
+        raise HTTPException(status_code=429, detail="USAJOBS rate limit reached. Try again later.")
+    if response.status_code >= 500:
+        raise HTTPException(status_code=502, detail="USAJOBS is temporarily unavailable. Try again shortly.")
+    if response.status_code >= 400:
+        raise HTTPException(status_code=502, detail=f"USAJOBS returned HTTP {response.status_code}. Try again shortly.")
+    return response
+
+def search_usajobs_provider(query: str, location: str, job_type: str, date_posted: str):
+    if not USAJOBS_API_KEY or not USAJOBS_USER_AGENT:
+        return []
+    params = {
+        "Keyword": query,
+        "LocationName": location,
+        "ResultsPerPage": 50,
+        "Page": 1,
+        "Fields": "Full",
+        "WhoMayApply": "Public",
+    }
+    if date_posted:
+        params["DatePosted"] = {"today": 1, "3days": 3, "week": 7, "month": 30}[date_posted]
+    if job_type == "FULLTIME":
+        params["PositionScheduleTypeCode"] = "1"
+    elif job_type == "PARTTIME":
+        params["PositionScheduleTypeCode"] = "2"
+
+    response = request_usajobs("USAJOBS job search", params)
+    try:
+        payload = response.json()
+    except ValueError:
+        raise HTTPException(status_code=502, detail="USAJOBS returned invalid JSON. Try again shortly.")
+    items = ((payload or {}).get("SearchResult") or {}).get("SearchResultItems") or []
+    results = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        descriptor = item.get("MatchedObjectDescriptor") or {}
+        locations = descriptor.get("PositionLocation") or []
+        location_text = descriptor.get("PositionLocationDisplay") or "; ".join(
+            str(entry.get("LocationName", "")) for entry in locations if isinstance(entry, dict)
+        )
+        apply_urls = descriptor.get("ApplyURI") or []
+        apply_url = apply_urls[0] if isinstance(apply_urls, list) and apply_urls else descriptor.get("PositionURI")
+        details = ((descriptor.get("UserArea") or {}).get("Details") or {})
+        description = details.get("JobSummary") or descriptor.get("QualificationSummary") or ""
+        results.append(build_search_result(
+            provider="USAJOBS",
+            provider_job_id=item.get("MatchedObjectId") or descriptor.get("PositionID"),
+            company=descriptor.get("OrganizationName") or descriptor.get("DepartmentName"),
+            role=descriptor.get("PositionTitle"),
+            location=location_text,
+            remote=False,
+            posted=iso_date_only(descriptor.get("PublicationStartDate")),
+            link=apply_url,
+            source_url=descriptor.get("PositionURI") or apply_url,
+            description=description,
+            source_terms_url=USAJOBS_TERMS_URL,
+            source_attribution="Federal job announcement supplied by USAJOBS; view and apply on USAJOBS.",
+        ))
+    return results
+
+def deduplicate_search_results(results: list) -> list:
+    deduped = []
+    seen = set()
+    for result in results:
+        link_key = normalize_job_link(result.get("link"))
+        identity = ("link", link_key) if link_key else (
+            "text",
+            normalize_spaces(result.get("company")),
+            normalize_spaces(result.get("role")),
+            normalize_spaces(result.get("location")),
+        )
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(result)
+    return deduped
+
 @app.get("/api/search")
 def search_jobs(query: str, location: str, jobType: str, datePosted: str, request: Request, workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     query = (query or "").strip()[:120]
@@ -2450,52 +2766,54 @@ def search_jobs(query: str, location: str, jobType: str, datePosted: str, reques
     if datePosted not in VALID_DATE_POSTED:
         raise HTTPException(status_code=400, detail="Invalid date filter")
 
-    user_rapid_key = get_rapidapi_key(current_user)
-
-    params = build_jsearch_params(query, location, datePosted, jobType)
+    providers = []
     try:
-        response = request_jsearch("Job search", user_rapid_key, params)
-        if response.status_code != 200:
-            raise_rapidapi_error(response, "Job search")
+        get_rapidapi_key(current_user)
+        providers.append(("jsearch", lambda: search_jsearch_provider(query, location, jobType, datePosted, current_user)))
+    except HTTPException as exc:
+        if exc.status_code != 400 or "not configured" not in str(exc.detail).lower():
+            raise
+    if USAJOBS_API_KEY and USAJOBS_USER_AGENT:
+        providers.append(("usajobs", lambda: search_usajobs_provider(query, location, jobType, datePosted)))
+    if not providers:
+        raise HTTPException(status_code=400, detail="No job search providers are configured. Add a RapidAPI JSearch key or configure USAJOBS_API_KEY and USAJOBS_USER_AGENT.")
 
-        try:
-            payload = response.json()
-        except ValueError:
-            raise HTTPException(status_code=502, detail="Job search returned an invalid response from RapidAPI. Try again shortly.")
-        if not isinstance(payload, dict):
-            raise HTTPException(status_code=502, detail="Job search returned an invalid response from RapidAPI. Try again shortly.")
-        if str(payload.get("status", "")).upper() in {"ERROR", "FAILED"}:
-            raise HTTPException(status_code=502, detail="RapidAPI rejected the job search. Check your JSearch subscription and try again.")
+    results = []
+    provider_errors = []
+    with ThreadPoolExecutor(max_workers=len(providers)) as executor:
+        futures = {executor.submit(searcher): name for name, searcher in providers}
+        for future in as_completed(futures):
+            provider_name = futures[future]
+            try:
+                results.extend(future.result())
+            except HTTPException as exc:
+                provider_errors.append({"provider": provider_name, "status": exc.status_code, "detail": str(exc.detail)})
+            except Exception:
+                logger.exception("Search provider failed provider=%s request_id=%s", provider_name, request_id_for(request))
+                provider_errors.append({"provider": provider_name, "status": 502, "detail": "Provider temporarily unavailable"})
 
-        data = extract_jsearch_jobs(payload)
-        results = []
-        for j in data:
-            if not isinstance(j, dict):
-                continue
-            result_link = j.get("job_apply_link") or j.get("job_google_link")
-            result_company = bounded_text(j.get("employer_name"), 160) or "Unknown"
-            result_role = bounded_text(j.get("job_title"), 200) or "Role"
-            posted_at = bounded_text(j.get("job_posted_at_datetime_utc"), 40)
-            results.append({
-                "_id": j.get("job_id") or result_link or f"{result_company}:{result_role}",
-                "company": result_company,
-                "role": result_role,
-                "source": "Search",
-                "remote": bool(j.get("job_is_remote")),
-                "location": f"{j.get('job_city', '')}, {j.get('job_state', '')}".strip(", "),
-                "posted": posted_at[:10],
-                "link": result_link,
-                "desc": j.get("job_description", "")
-            })
-        add_usage_event(
-            db, current_user.id, "job_search", request_id=request_id_for(request), details={"query": query, "location": location, "job_type": jobType, "results": len(results)}, organization_id=workspace.id,
-        )
-        db.commit()
-        return results
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    results = deduplicate_search_results(results)
+    if not results and provider_errors and len(provider_errors) == len(providers):
+        first_error = provider_errors[0]
+        raise HTTPException(status_code=first_error["status"], detail=first_error["detail"])
+
+    add_usage_event(
+        db,
+        current_user.id,
+        "job_search",
+        request_id=request_id_for(request),
+        details={
+            "query": query,
+            "location": location,
+            "job_type": jobType,
+            "providers": [name for name, _ in providers],
+            "provider_errors": [error["provider"] for error in provider_errors],
+            "results": len(results),
+        },
+        organization_id=workspace.id,
+    )
+    db.commit()
+    return results
 
 @app.post("/api/resume-match")
 def resume_match(req: ResumeMatchRequest, request: Request, workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):

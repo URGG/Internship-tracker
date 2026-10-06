@@ -52,7 +52,7 @@ Team workspaces are available through the application auth layer. Each account r
 
 ### Search and lead capture
 
-- Search live job listings through an optional RapidAPI-backed flow
+- Search live job listings through a provider-agnostic flow (JSearch/RapidAPI plus optional USAJOBS)
 - Save search results as leads
 - Import job details from a posting URL
 - Run auto-hunter subscriptions for recurring searches
@@ -188,6 +188,10 @@ Optional:
 - `TURNSTILE_SECRET_KEY` to require Cloudflare Turnstile verification on signup and login
 - `TURNSTILE_EXPECTED_HOSTNAME` to restrict verification to the deployed frontend hostname
 - `RAPIDAPI_KEY` is optional; leave it unset when each user enters their own key in Settings
+- `USAJOBS_API_KEY` and `USAJOBS_USER_AGENT` are optional; set both only after requesting and accepting access under the USAJOBS API terms
+- `TERMS_URL` and `PRIVACY_URL` should point to the deployed, attorney-reviewed policies
+- `TERMS_VERSION` and `PRIVACY_VERSION` identify the policy versions recorded at signup
+- `REQUIRE_LEGAL_CONSENT=true` requires current Terms and Privacy acceptance before account creation (enabled automatically in production)
 
 If `DATABASE_URL` is not set, the backend falls back to a local SQLite database for development. Use Postgres or another managed SQL database in production.
 
@@ -215,6 +219,12 @@ The backend exposes `/api/health` for deployment checks. It reports database rea
 
 Application analytics are calculated from the server-side `application_events` ledger rather than only from the current status column. Product activity and built-in AI usage are tracked separately in `usage_events`, including feature-level units for the current billing month.
 
+### Job provider and data-use safeguards
+
+Search uses provider adapters and normalizes results into a shared response shape. JSearch/RapidAPI and USAJOBS are independent providers; one provider can fail without taking down another. Results retain provider IDs, source URLs, attribution, terms URLs, and fetch timestamps when saved as leads. Search results are deduplicated before they reach the UI, and API credentials are never sent to the browser.
+
+Before enabling a provider in production, review its current API agreement and confirm that the intended display, storage, attribution, caching, and redirect behavior are permitted. USAJOBS results must remain credited and users must be directed to USAJOBS to view/apply; the application therefore preserves a USAJOBS source URL and attribution on saved leads. This implementation is compliance plumbing, not legal advice or a substitute for counsel review.
+
 ### Schema migrations and verification
 
 The backend keeps startup compatibility checks for existing deployments and now includes an idempotent Alembic foundation migration. For a controlled release, run this from `Backend/` before starting the service:
@@ -235,6 +245,7 @@ Optional:
 
 - `VITE_API_BASE_URL`
 - `VITE_TURNSTILE_SITE_KEY` to show the Cloudflare Turnstile widget in the auth modal; leave unset to keep Turnstile disabled
+- `VITE_TERMS_URL`, `VITE_PRIVACY_URL`, `VITE_TERMS_VERSION`, and `VITE_PRIVACY_VERSION` should match the backend's attorney-reviewed policy URLs and versions
 
 If `VITE_API_BASE_URL` is not set, the frontend uses the production backend URL configured in `intership-finder/src/config.js`.
 
