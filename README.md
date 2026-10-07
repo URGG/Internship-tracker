@@ -193,7 +193,9 @@ Optional:
 - `TERMS_VERSION` and `PRIVACY_VERSION` identify the policy versions recorded at signup
 - `REQUIRE_LEGAL_CONSENT=true` requires current Terms and Privacy acceptance before account creation (enabled automatically in production)
 - `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_BUSINESS_ADDRESS`, `MINIMUM_AGE`, and `REQUIRE_AGE_CONFIRMATION` configure the public legal pages and age policy
+- `STRICT_LEGAL_CONFIG=true` makes production refuse to start until attorney-reviewed Terms/Privacy URLs and a real legal contact email are configured. Keep it `false` only while completing deployment setup; the health response reports missing values.
 - `REQUIRE_EMAIL_VERIFICATION`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_USE_TLS` enable verification and password-reset delivery
+- SMTP must be configured for password-reset and username-recovery emails to actually send; the recovery UI reports when email delivery is unavailable.
 - `AUTH_SESSION_REQUIRED=true` enables server-side session revocation; `MFA_ISSUER` names the authenticator-app issuer
 - MFA is optional and is enrolled after sign-in from Settings. Login only asks for an authenticator code when the account has already enabled MFA.
 

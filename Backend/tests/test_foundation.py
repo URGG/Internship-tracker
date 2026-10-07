@@ -256,6 +256,21 @@ def test_mfa_is_optional_until_enabled_and_then_required_at_login():
     assert client.post("/api/login", json={"username": "mfa-test", "password": "password123"}).status_code == 200
 
 
+def test_username_recovery_returns_generic_result_for_known_and_unknown_email():
+    db = SessionLocal()
+    clear_database(db)
+    db.close()
+    client = TestClient(__import__("main").app)
+
+    assert client.post("/api/signup", json={"username": "recovery-test", "email": "recovery@example.com", "password": "password123"}).status_code == 200
+    known = client.post("/api/security/username-recovery/request", json={"email": "recovery@example.com"})
+    unknown = client.post("/api/security/username-recovery/request", json={"email": "nobody@example.com"})
+
+    assert known.status_code == 200
+    assert unknown.status_code == 200
+    assert known.json()["message"] == unknown.json()["message"]
+
+
 def test_workspace_members_share_only_the_selected_workspace(monkeypatch):
     db = SessionLocal()
     clear_database(db)

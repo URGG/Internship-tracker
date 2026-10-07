@@ -39,6 +39,8 @@ services:
         sync: false
       - key: LEGAL_BUSINESS_ADDRESS
         sync: false
+      - key: STRICT_LEGAL_CONFIG
+        value: "false"
       - key: USAJOBS_API_KEY
         sync: false
       - key: USAJOBS_USER_AGENT

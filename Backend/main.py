@@ -106,6 +106,7 @@ REQUIRE_LEGAL_CONSENT = os.getenv("REQUIRE_LEGAL_CONSENT", "true" if APP_ENV == 
 LEGAL_ENTITY_NAME = os.getenv("LEGAL_ENTITY_NAME", "intern.track")
 LEGAL_CONTACT_EMAIL = os.getenv("LEGAL_CONTACT_EMAIL", os.getenv("SUPPORT_EMAIL", "support@example.com"))
 LEGAL_BUSINESS_ADDRESS = os.getenv("LEGAL_BUSINESS_ADDRESS", "")
+STRICT_LEGAL_CONFIG = os.getenv("STRICT_LEGAL_CONFIG", "false").lower() == "true"
 MINIMUM_AGE = max(13, int(os.getenv("MINIMUM_AGE", "13")))
 REQUIRE_AGE_CONFIRMATION = os.getenv("REQUIRE_AGE_CONFIRMATION", "true").lower() == "true"
 REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() == "true"
@@ -127,13 +128,18 @@ USAJOBS_TERMS_URL = "https://developer.usajobs.gov/apirequest/index"
 if APP_ENV == "production" and FRONTEND_URL.startswith(("http://localhost", "http://127.0.0.1")):
     raise RuntimeError("CRITICAL: FRONTEND_URL must be your deployed frontend URL in production.")
 
-if APP_ENV == "production" and (
-    not os.getenv("TERMS_URL")
-    or not os.getenv("PRIVACY_URL")
-    or not os.getenv("LEGAL_CONTACT_EMAIL")
-    or LEGAL_CONTACT_EMAIL.endswith("@example.com")
-):
-    raise RuntimeError("CRITICAL: Set attorney-reviewed TERMS_URL, PRIVACY_URL, and LEGAL_CONTACT_EMAIL in production.")
+missing_legal_config = [
+    name for name, configured in [
+        ("TERMS_URL", bool(os.getenv("TERMS_URL"))),
+        ("PRIVACY_URL", bool(os.getenv("PRIVACY_URL"))),
+        ("LEGAL_CONTACT_EMAIL", bool(os.getenv("LEGAL_CONTACT_EMAIL")) and not LEGAL_CONTACT_EMAIL.endswith("@example.com")),
+    ] if not configured
+]
+if APP_ENV == "production" and missing_legal_config:
+    message = f"Production legal configuration is incomplete: {', '.join(missing_legal_config)}"
+    if STRICT_LEGAL_CONFIG:
+        raise RuntimeError(f"CRITICAL: {message}. Set the values before enabling STRICT_LEGAL_CONFIG.")
+    logger.warning("%s. The public in-app legal routes remain available; configure these values before launch.", message)
 
 if APP_ENV == "production" and REQUIRE_EMAIL_VERIFICATION and (not SMTP_HOST or not SMTP_FROM):
     raise RuntimeError("CRITICAL: SMTP_HOST and SMTP_FROM are required when email verification is enabled.")
@@ -397,6 +403,9 @@ class PasswordChange(BaseModel):
     new_password: str
 
 class PasswordResetRequest(BaseModel):
+    email: str
+
+class UsernameRecoveryRequest(BaseModel):
     email: str
 
 class PasswordResetConfirm(BaseModel):
@@ -1087,6 +1096,8 @@ def legal_payload():
         "cookies_url": COOKIES_URL,
         "disclaimer_url": DISCLAIMER_URL,
         "acceptable_use_url": ACCEPTABLE_USE_URL,
+        "legal_config_strict": STRICT_LEGAL_CONFIG,
+        "missing_legal_config": missing_legal_config,
         "required_for_signup": REQUIRE_LEGAL_CONSENT,
         "email_verification_required": REQUIRE_EMAIL_VERIFICATION,
         "subprocessors": [
@@ -2059,9 +2070,11 @@ def health(db: Session = Depends(get_db)):
         "gemini_model": GEMINI_MODEL,
         "environment": APP_ENV,
         "legal": {
-            "terms_configured": bool(TERMS_URL and not TERMS_URL.endswith("/terms")),
-            "privacy_configured": bool(PRIVACY_URL and not PRIVACY_URL.endswith("/privacy")),
-            "contact_configured": bool(LEGAL_CONTACT_EMAIL and "@" in LEGAL_CONTACT_EMAIL),
+            "terms_configured": bool(TERMS_URL),
+            "privacy_configured": bool(PRIVACY_URL),
+            "contact_configured": bool(LEGAL_CONTACT_EMAIL and "@" in LEGAL_CONTACT_EMAIL and not LEGAL_CONTACT_EMAIL.endswith("@example.com")),
+            "strict_config": STRICT_LEGAL_CONFIG,
+            "missing_config": missing_legal_config,
             "email_verification_configured": bool(not REQUIRE_EMAIL_VERIFICATION or (SMTP_HOST and SMTP_FROM)),
         },
     }
@@ -2201,7 +2214,29 @@ def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(
             f"Reset your password by opening this link:\n\n{FRONTEND_URL}/?reset={token}\n\nThis link expires in 30 minutes.",
         )
     db.commit()
-    return {"message": "If an account matches that email, reset instructions were sent.", "sent": sent if APP_ENV != "production" else None}
+    return {
+        "message": "If an account matches that email, reset instructions were sent.",
+        "sent": sent if APP_ENV != "production" else None,
+        "delivery_configured": bool(SMTP_HOST and SMTP_FROM),
+    }
+
+@app.post("/api/security/username-recovery/request")
+def request_username_recovery(payload: UsernameRecoveryRequest, db: Session = Depends(get_db)):
+    email = normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    sent = False
+    if user and user.email:
+        sent = send_email_message(
+            user.email,
+            f"Your {LEGAL_ENTITY_NAME} username",
+            f"Your {LEGAL_ENTITY_NAME} username is: {user.username}\n\nIf you did not request this message, you can ignore it.",
+        )
+    db.commit()
+    return {
+        "message": "If an account matches that email, username instructions were sent.",
+        "sent": sent if APP_ENV != "production" else None,
+        "delivery_configured": bool(SMTP_HOST and SMTP_FROM),
+    }
 
 @app.post("/api/security/password-reset/confirm")
 def confirm_password_reset(payload: PasswordResetConfirm, db: Session = Depends(get_db)):
