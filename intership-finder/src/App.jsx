@@ -112,6 +112,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
   const [legalAccepted, setLegalAccepted] = useState(false);
   const [ageConfirmed, setAgeConfirmed] = useState(false);
   const [mfaCode, setMfaCode] = useState("");
+  const [mfaRequired, setMfaRequired] = useState(false);
   const [resetRequest, setResetRequest] = useState(false);
   const [resetMessage, setResetMessage] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
@@ -130,6 +131,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
       setLegalAccepted(false);
       setAgeConfirmed(false);
       setMfaCode("");
+      setMfaRequired(false);
       setResetRequest(false);
       setResetMessage("");
       setConfirmPass("");
@@ -243,10 +245,17 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
           terms_version: isSignUp ? TERMS_VERSION : null,
           privacy_version: isSignUp ? PRIVACY_VERSION : null,
           age_confirmed: isSignUp ? ageConfirmed : false,
-          mfa_code: isSignUp ? null : mfaCode || null,
+          mfa_code: isSignUp || !mfaRequired ? null : mfaCode || null,
         }),
       });
       const data = await res.json();
+
+      if (!res.ok && !isSignUp && !resetRequest && !resetToken && res.status === 401 && String(data.detail || "").toLowerCase().includes("mfa")) {
+        setMfaRequired(true);
+        setMfaCode("");
+        setError("");
+        return;
+      }
 
       if (!res.ok) throw new Error(data.detail || "Authentication failed");
 
@@ -262,6 +271,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
         setUser(user || email);
         setEmail("");
         setPass("");
+        setMfaRequired(false);
         setIsSignUp(false);
       } else {
         localStorage.setItem("token", data.access_token);
@@ -345,6 +355,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
               </div>}
               {resetToken && <div className="frow"><label className="flbl" htmlFor="auth-password-confirm">Confirm new password</label><input id="auth-password-confirm" className="finp" type="password" value={confirmPass} onChange={(event) => setConfirmPass(event.target.value)} required minLength={8} /></div>}
               {resetMessage && <div className="note">{resetMessage}</div>}
+              {mfaRequired && !isSignUp && !resetRequest && !resetToken && <div className="note auth-mfa-note">This account uses MFA. Enter the six-digit code from your authenticator app to finish signing in.</div>}
               {error && <div className="auth-error" id="auth-error" role="alert">{error}</div>}
               {isSignUp && !resetToken && (
                 <label className="auth-consent">
@@ -358,10 +369,10 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
                   <span>I confirm that I am at least {MINIMUM_AGE} years old.</span>
                 </label>
               )}
-              {!isSignUp && !resetRequest && !resetToken && (
+              {mfaRequired && !isSignUp && !resetRequest && !resetToken && (
                 <label className="frow" htmlFor="auth-mfa-code">
-                  <span className="flbl">Authenticator code <span className="auth-optional">if MFA is enabled</span></span>
-                  <input id="auth-mfa-code" className="finp" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} inputMode="numeric" placeholder="6-digit code" />
+                  <span className="flbl">Authenticator code <span className="auth-optional">required for this account</span></span>
+                  <input id="auth-mfa-code" className="finp" value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))} inputMode="numeric" pattern="[0-9]{6}" maxLength={6} required={mfaRequired} placeholder="6-digit code" autoFocus />
                 </label>
               )}
               {TURNSTILE_SITE_KEY && <div className="auth-turnstile" ref={turnstileRef} />}
@@ -372,10 +383,10 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
 
             {!resetToken && <div className="auth-switch-row">
               {resetRequest ? "Remembered your password? " : isSignUp ? "Have an account? " : "Need an account? "}
-              <button className="auth-switch" type="button" onClick={() => { setError(""); setResetMessage(""); setResetRequest(false); setLegalAccepted(false); setAgeConfirmed(false); setMfaCode(""); setIsSignUp(!isSignUp); }}>
+              <button className="auth-switch" type="button" onClick={() => { setError(""); setResetMessage(""); setResetRequest(false); setLegalAccepted(false); setAgeConfirmed(false); setMfaCode(""); setMfaRequired(false); setIsSignUp(!isSignUp); }}>
                 {resetRequest ? "Log in" : isSignUp ? "Log in" : "Sign up"}
               </button>
-              {!isSignUp && !resetRequest && <button className="auth-switch auth-forgot" type="button" onClick={() => { setError(""); setResetRequest(true); setEmail(""); }}>Forgot password?</button>}
+              {!isSignUp && !resetRequest && <button className="auth-switch auth-forgot" type="button" onClick={() => { setError(""); setMfaRequired(false); setResetRequest(true); setEmail(""); }}>Forgot password?</button>}
             </div>}
             <div className="auth-footnote"><span className="auth-footnote-dot" /> Core tracking is free · No credit card required</div>
           </section>

@@ -120,10 +120,10 @@ export default function PrivacyCenter({ authHeaders, toast, onAccountDeleted }) 
 
         <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid var(--b0)" }}>
           <strong style={{ fontSize: 13 }}>Multi-factor authentication</strong>
-          <p style={{ fontSize: 12, color: "var(--txt3)", marginTop: 6 }}>Use an authenticator app. Setup shows a secret and an otpauth URI; verify the first code before enabling.</p>
-          {!security?.mfa_enabled && <button className="mbtn" onClick={() => run("mfa-setup", async () => setMfaSetup(await call("/api/security/mfa/setup")), "MFA setup ready")}>Set up MFA</button>}
+          <p style={{ fontSize: 12, color: "var(--txt3)", marginTop: 6 }}>MFA is optional and can be added after you sign in. Use an authenticator app, then verify the first code before enabling it.</p>
+          {!security?.mfa_enabled && <button className="mbtn" disabled={busy === "mfa-setup"} onClick={() => run("mfa-setup", async () => setMfaSetup(await call("/api/security/mfa/setup")), "MFA setup ready")}>{busy === "mfa-setup" ? "Preparing..." : "Set up MFA"}</button>}
           {mfaSetup && !security?.mfa_enabled && <div className="note" style={{ marginTop: 10, wordBreak: "break-all" }}>Secret: {mfaSetup.secret}<br />URI: {mfaSetup.otpauth_url}</div>}
-          {(mfaSetup || security?.mfa_enabled) && <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}><input className="finp" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} placeholder="6-digit code" inputMode="numeric" /><button className="mbtn" onClick={() => run("mfa", () => call(`/api/security/mfa/${security?.mfa_enabled ? "disable" : "enable"}?code=${encodeURIComponent(mfaCode)}`, { method: "POST" }), security?.mfa_enabled ? "MFA disabled" : "MFA enabled") .then(load)}> {security?.mfa_enabled ? "Disable MFA" : "Enable MFA"}</button></div>}
+          {(mfaSetup || security?.mfa_enabled) && <div style={{ display: "flex", gap: 8, marginTop: 10, flexWrap: "wrap" }}><input className="finp" value={mfaCode} onChange={(event) => setMfaCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="6-digit code" inputMode="numeric" maxLength={6} /><button className="mbtn" disabled={mfaCode.length !== 6 || busy === "mfa"} onClick={() => run("mfa", async () => { const result = await call(`/api/security/mfa/${security?.mfa_enabled ? "disable" : "enable"}?code=${encodeURIComponent(mfaCode)}`, { method: "POST" }); setMfaCode(""); if (security?.mfa_enabled) setMfaSetup(null); return result; }, security?.mfa_enabled ? "MFA disabled" : "MFA enabled").then(load)}> {busy === "mfa" ? "Saving..." : security?.mfa_enabled ? "Disable MFA" : "Enable MFA"}</button></div>}
         </div>
       </div>
 

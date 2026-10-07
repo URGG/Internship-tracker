@@ -4,6 +4,7 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import Autocomplete from "../components/shared/Autocomplete";
 import Icon from "../components/shared/Icon";
 import PrivacyCenter from "../components/shared/PrivacyCenter";
+import { ACCEPTABLE_USE_URL, COOKIES_URL, DISCLAIMER_URL, PRIVACY_URL, TERMS_URL } from "../config";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -134,6 +135,17 @@ export default function SettingsPage({
   return (
       <div style={{ maxWidth: 900, margin: "0 auto", paddingBottom: "40px" }}>
       <PrivacyCenter authHeaders={authHeaders} toast={toast} onAccountDeleted={onAccountDeleted} />
+      <div className="scard settings-legal-card">
+        <h3>Legal & safety</h3>
+        <p style={{ fontSize: 12, color: "var(--txt3)", marginBottom: 14 }}>Review the policies that explain how intern.track handles accounts, data, browser storage, AI suggestions, and responsible use.</p>
+        <div className="settings-legal-links">
+          <a href={TERMS_URL}>Terms of Service</a>
+          <a href={PRIVACY_URL}>Privacy Policy</a>
+          <a href={COOKIES_URL}>Cookies & storage</a>
+          <a href={DISCLAIMER_URL}>AI disclaimer</a>
+          <a href={ACCEPTABLE_USE_URL}>Acceptable use</a>
+        </div>
+      </div>
       <div className="scard">
         <h3>Free Mode</h3>
         <p style={{ fontSize: 12, color: "var(--txt2)", marginBottom: 12 }}>

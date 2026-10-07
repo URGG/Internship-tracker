@@ -2647,6 +2647,34 @@ code {
     text-underline-offset: 3px;
 }
 
+.settings-legal-links {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.settings-legal-links a {
+    padding: 8px 10px;
+    color: var(--txt2);
+    background: var(--s2);
+    border: 1px solid var(--b0);
+    border-radius: var(--r);
+    font-size: 11px;
+    font-weight: 700;
+}
+
+.settings-legal-links a:hover {
+    color: var(--txt);
+    border-color: var(--b1);
+    background: var(--s3);
+}
+
+.auth-mfa-note {
+    color: var(--txt2);
+    border-color: rgba(251, 191, 36, .28);
+    background: rgba(251, 191, 36, .07);
+}
+
 /* LEGAL PAGES */
 
 .legal-page {

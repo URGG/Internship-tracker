@@ -1,6 +1,11 @@
 import os
 import sys
 import json
+import base64
+import hashlib
+import hmac
+import struct
+import time
 
 os.environ.setdefault("APP_ENV", "development")
 os.environ.setdefault("DATABASE_URL", "sqlite:///./Backend/test-ci.db")
@@ -37,6 +42,15 @@ from main import (  # noqa: E402
     JobCreate,
 )
 from fastapi.testclient import TestClient
+
+
+def totp_code(secret):
+    key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
+    counter = int(time.time() // 30)
+    digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+    index = digest[-1] & 0x0F
+    number = (struct.unpack(">I", digest[index:index + 4])[0] & 0x7FFFFFFF) % 1000000
+    return f"{number:06d}"
 
 
 def clear_database(db):
@@ -211,6 +225,35 @@ def test_api_records_events_and_exposes_authoritative_analytics():
     assert body["total"] == 2
     assert body["submitted"] == 1
     assert body["responseRate"] == "0.0"
+
+
+def test_mfa_is_optional_until_enabled_and_then_required_at_login():
+    db = SessionLocal()
+    clear_database(db)
+    db.close()
+    client = TestClient(__import__("main").app)
+
+    assert client.post("/api/signup", json={"username": "mfa-test", "password": "password123"}).status_code == 200
+    initial_login = client.post("/api/login", json={"username": "mfa-test", "password": "password123"})
+    assert initial_login.status_code == 200
+    headers = {"Authorization": f"Bearer {initial_login.json()['access_token']}"}
+
+    setup = client.post("/api/security/mfa/setup", headers=headers)
+    assert setup.status_code == 200
+    code = totp_code(setup.json()["secret"])
+    enabled = client.post("/api/security/mfa/enable", headers=headers, params={"code": code})
+    assert enabled.status_code == 200
+
+    missing_code = client.post("/api/login", json={"username": "mfa-test", "password": "password123"})
+    assert missing_code.status_code == 401
+    assert "MFA" in missing_code.json()["detail"]
+
+    login_with_mfa = client.post("/api/login", json={"username": "mfa-test", "password": "password123", "mfa_code": totp_code(setup.json()["secret"])})
+    assert login_with_mfa.status_code == 200
+
+    disabled = client.post("/api/security/mfa/disable", headers=headers, params={"code": totp_code(setup.json()["secret"])})
+    assert disabled.status_code == 200
+    assert client.post("/api/login", json={"username": "mfa-test", "password": "password123"}).status_code == 200
 
 
 def test_workspace_members_share_only_the_selected_workspace(monkeypatch):

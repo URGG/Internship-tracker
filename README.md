@@ -195,6 +195,7 @@ Optional:
 - `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_BUSINESS_ADDRESS`, `MINIMUM_AGE`, and `REQUIRE_AGE_CONFIRMATION` configure the public legal pages and age policy
 - `REQUIRE_EMAIL_VERIFICATION`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_USE_TLS` enable verification and password-reset delivery
 - `AUTH_SESSION_REQUIRED=true` enables server-side session revocation; `MFA_ISSUER` names the authenticator-app issuer
+- MFA is optional and is enrolled after sign-in from Settings. Login only asks for an authenticator code when the account has already enabled MFA.
 
 If `DATABASE_URL` is not set, the backend falls back to a local SQLite database for development. Use Postgres or another managed SQL database in production.
 
