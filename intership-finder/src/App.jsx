@@ -1,11 +1,12 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { getActionSignal, uid } from "./utils/helpers";
-import { API_BASE, PRIVACY_URL, PRIVACY_VERSION, TERMS_URL, TERMS_VERSION, TURNSTILE_SITE_KEY } from "./config";
+import { ACCEPTABLE_USE_URL, API_BASE, COOKIES_URL, DISCLAIMER_URL, LEGAL_ENTITY_NAME, MINIMUM_AGE, PRIVACY_URL, PRIVACY_VERSION, TERMS_URL, TERMS_VERSION, TURNSTILE_SITE_KEY } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import LandingPage from "./pages/LandingPage";
 import TrackerPage from "./pages/TrackerPage";
+import LegalPage from "./pages/LegalPage";
 
 const AnalyticsPage = lazy(() => import("./pages/AnalyticsPage"));
 const PricingPage = lazy(() => import("./pages/PricingPage"));
@@ -102,13 +103,18 @@ const PanelFallback = ({ label = "Loading..." }) => (
   </div>
 );
 
-const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
+const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, onResetComplete }) => {
   const [isSignUp, setIsSignUp] = useState(false);
   const [user, setUser] = useState("");
   const [email, setEmail] = useState("");
   const [pass, setPass] = useState("");
   const [turnstileToken, setTurnstileToken] = useState("");
   const [legalAccepted, setLegalAccepted] = useState(false);
+  const [ageConfirmed, setAgeConfirmed] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const [resetRequest, setResetRequest] = useState(false);
+  const [resetMessage, setResetMessage] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
   const turnstileRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -122,6 +128,11 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
       setPass("");
       setTurnstileToken("");
       setLegalAccepted(false);
+      setAgeConfirmed(false);
+      setMfaCode("");
+      setResetRequest(false);
+      setResetMessage("");
+      setConfirmPass("");
       setShowPassword(false);
       setError("");
     }
@@ -173,8 +184,46 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
+    if (resetToken) {
+      if (pass !== confirmPass) {
+        setError("Passwords do not match.");
+        return;
+      }
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/security/password-reset/confirm`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ token: resetToken, new_password: pass }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "Password reset failed");
+        toast("Password reset. You can sign in now.", "#34d399");
+        onResetComplete?.();
+        setShow(false);
+      } catch (err) {
+        setError(err.message || "Password reset failed");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+    if (resetRequest) {
+      setLoading(true);
+      try {
+        const res = await fetch(`${API_BASE}/security/password-reset/request`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ email }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || "Could not request a reset");
+        setResetMessage(data.message || "If an account matches, reset instructions were sent.");
+      } catch (err) {
+        setError(err.message || "Could not request a reset");
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     if (isSignUp && !legalAccepted) {
       setError("Please accept the Terms of Service and Privacy Policy to continue.");
+      return;
+    }
+    if (isSignUp && !ageConfirmed) {
+      setError("You must confirm that you are at least 13 years old to continue.");
       return;
     }
     setLoading(true);
@@ -193,6 +242,8 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
           privacy_accepted: isSignUp ? legalAccepted : false,
           terms_version: isSignUp ? TERMS_VERSION : null,
           privacy_version: isSignUp ? PRIVACY_VERSION : null,
+          age_confirmed: isSignUp ? ageConfirmed : false,
+          mfa_code: isSignUp ? null : mfaCode || null,
         }),
       });
       const data = await res.json();
@@ -200,7 +251,14 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
       if (!res.ok) throw new Error(data.detail || "Authentication failed");
 
       if (isSignUp) {
-        toast("Account created! You can now log in.", "#34d399");
+        toast(
+          data.email_verification_required && !data.verification_sent
+            ? "Account created. Email delivery still needs to be configured."
+            : data.email_verification_required
+              ? "Account created. Check your email to verify it before signing in."
+              : "Account created! You can now log in.",
+          data.email_verification_required && !data.verification_sent ? "#fbbf24" : "#34d399"
+        );
         setUser(user || email);
         setEmail("");
         setPass("");
@@ -226,68 +284,112 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent }) => {
         <button className="closex auth-close" type="button" aria-label="Close authentication dialog" onClick={() => !loading && setShow(false)}>
           <Icon name="close" size={18} />
         </button>
-        <div className="sb-logo auth-brand">
-          <div className="sb-logo-mark"><Icon name="logo" size={16} strokeWidth={2} /></div>
-          <div className="sb-logo-text">
-            intern<span>.track</span>
-          </div>
-        </div>
+        <div className="auth-layout">
+          <aside className="auth-aside">
+            <div className="auth-aside-brand">
+              <div className="auth-aside-mark"><Icon name="logo" size={18} strokeWidth={2} /></div>
+              <div>
+                <div className="auth-aside-name">intern<span>.track</span></div>
+                <div className="auth-aside-label">Your application workspace</div>
+              </div>
+            </div>
+            <div className="auth-aside-copy">
+              <div className="auth-aside-kicker">Stay in motion</div>
+              <h3>Make the next application easier to act on.</h3>
+              <p>Keep roles, deadlines, follow-ups, and interview notes together so good opportunities do not disappear into open tabs.</p>
+            </div>
+            <div className="auth-benefits">
+              <div><Icon name="tracker" size={16} /><span>One clear application pipeline</span></div>
+              <div><Icon name="analytics" size={16} /><span>Weekly progress you can see</span></div>
+              <div><Icon name="spark" size={16} /><span>Optional AI help, always review-first</span></div>
+            </div>
+            <div className="auth-aside-links">
+              <a href={PRIVACY_URL}>Privacy by default</a>
+              <a href={COOKIES_URL}>Storage notice</a>
+            </div>
+          </aside>
 
-        <div className="auth-heading">
-          <div className="auth-kicker">{isSignUp ? "Set up your workspace" : "Your application workspace"}</div>
-          <h2 id="auth-title">{isSignUp ? "Create your account" : "Welcome back"}</h2>
-          <p>{isSignUp ? "Track applications, follow-ups, and opportunities in one focused space." : "Sign in to pick up where you left off."}</p>
-        </div>
+          <section className="auth-main">
+            <div className="sb-logo auth-brand">
+              <div className="sb-logo-mark"><Icon name="logo" size={16} strokeWidth={2} /></div>
+              <div className="sb-logo-text">
+                {LEGAL_ENTITY_NAME}
+              </div>
+            </div>
 
-        <form onSubmit={handleSubmit} className="auth-form">
-          {isSignUp && (
-            <label className="frow" htmlFor="auth-email">
-              <span className="flbl">Email address</span>
-              <input id="auth-email" className="finp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" autoComplete="email" autoFocus />
-            </label>
-          )}
-          <label className="frow" htmlFor="auth-identifier">
-            <span className="flbl">{isSignUp ? <>Username <span className="auth-optional">optional</span></> : "Email or username"}</span>
-            <input id="auth-identifier" className="finp" value={user} onChange={(e) => setUser(e.target.value)} required={!isSignUp} placeholder={isSignUp ? "Choose a handle" : "you@example.com"} autoComplete="username" autoFocus={!isSignUp} />
-          </label>
-          <div className="frow">
-            <label className="flbl" htmlFor="auth-password">Password</label>
-            <span className="auth-password-field">
-              <input id="auth-password" className="finp" type={showPassword ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} required minLength={8} placeholder="At least 8 characters" autoComplete={isSignUp ? "new-password" : "current-password"} />
-              <button className="auth-password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>
-                {showPassword ? "Hide" : "Show"}
+            <div className="auth-heading">
+              <div className="auth-kicker">{resetToken ? "Secure account recovery" : resetRequest ? "Account recovery" : isSignUp ? "Set up your workspace" : "Welcome back"}</div>
+              <h2 id="auth-title">{resetToken ? "Choose a new password" : resetRequest ? "Reset your password" : isSignUp ? "Create your account" : "Sign in to intern.track"}</h2>
+              <p id="auth-description">{resetToken ? "Choose a strong password for your account." : resetRequest ? "We will send instructions if the email belongs to an account." : isSignUp ? "Start with a focused place for every role, follow-up, and next step." : "Pick up where you left off and keep your search moving."}</p>
+            </div>
+
+            <form onSubmit={handleSubmit} className="auth-form">
+              {(isSignUp || resetRequest) && !resetToken && (
+                <label className="frow" htmlFor="auth-email">
+                  <span className="flbl">Email address</span>
+                  <input id="auth-email" className="finp" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required placeholder="you@example.com" autoComplete="email" autoFocus />
+                </label>
+              )}
+              {!isSignUp && !resetRequest && !resetToken && <label className="frow" htmlFor="auth-identifier">
+                <span className="flbl">Email or username</span>
+                <input id="auth-identifier" className="finp" value={user} onChange={(e) => setUser(e.target.value)} required placeholder="you@example.com" autoComplete="username" autoFocus />
+              </label>}
+              {!resetRequest && <div className="frow">
+                <label className="flbl" htmlFor="auth-password">Password</label>
+                <span className="auth-password-field">
+                  <input id="auth-password" className="finp" type={showPassword ? "text" : "password"} value={pass} onChange={(e) => setPass(e.target.value)} required minLength={8} placeholder="At least 8 characters" autoComplete={isSignUp || resetToken ? "new-password" : "current-password"} />
+                  <button className="auth-password-toggle" type="button" onClick={() => setShowPassword((visible) => !visible)} aria-label={showPassword ? "Hide password" : "Show password"}>
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </span>
+              </div>}
+              {resetToken && <div className="frow"><label className="flbl" htmlFor="auth-password-confirm">Confirm new password</label><input id="auth-password-confirm" className="finp" type="password" value={confirmPass} onChange={(event) => setConfirmPass(event.target.value)} required minLength={8} /></div>}
+              {resetMessage && <div className="note">{resetMessage}</div>}
+              {error && <div className="auth-error" id="auth-error" role="alert">{error}</div>}
+              {isSignUp && !resetToken && (
+                <label className="auth-consent">
+                  <input type="checkbox" checked={legalAccepted} onChange={(event) => setLegalAccepted(event.target.checked)} />
+                  <span>I agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer">Terms of Service</a> and <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy Policy</a>.</span>
+                </label>
+              )}
+              {isSignUp && !resetToken && (
+                <label className="auth-consent">
+                  <input type="checkbox" checked={ageConfirmed} onChange={(event) => setAgeConfirmed(event.target.checked)} />
+                  <span>I confirm that I am at least {MINIMUM_AGE} years old.</span>
+                </label>
+              )}
+              {!isSignUp && !resetRequest && !resetToken && (
+                <label className="frow" htmlFor="auth-mfa-code">
+                  <span className="flbl">Authenticator code <span className="auth-optional">if MFA is enabled</span></span>
+                  <input id="auth-mfa-code" className="finp" value={mfaCode} onChange={(event) => setMfaCode(event.target.value)} inputMode="numeric" placeholder="6-digit code" />
+                </label>
+              )}
+              {TURNSTILE_SITE_KEY && <div className="auth-turnstile" ref={turnstileRef} />}
+              <button className="mbtn mbtn-p auth-submit" type="submit" disabled={loading} aria-busy={loading}>
+                {loading ? "Working..." : resetToken ? "Reset password" : resetRequest ? "Send reset link" : isSignUp ? "Create account" : "Sign in"}
               </button>
-            </span>
-          </div>
-          {error && <div className="auth-error" id="auth-error" role="alert">{error}</div>}
-          {isSignUp && (
-            <label style={{ display: "flex", alignItems: "flex-start", gap: 9, fontSize: 11, lineHeight: 1.5, color: "var(--txt2)" }}>
-              <input type="checkbox" checked={legalAccepted} onChange={(event) => setLegalAccepted(event.target.checked)} style={{ marginTop: 2 }} />
-              <span>I agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer">Terms of Service</a> and <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy Policy</a>.</span>
-            </label>
-          )}
-          {TURNSTILE_SITE_KEY && <div className="auth-turnstile" ref={turnstileRef} />}
-          <button className="mbtn mbtn-p auth-submit" type="submit" disabled={loading} aria-busy={loading}>
-            {loading ? "Signing you in..." : isSignUp ? "Create account" : "Sign in"}
-          </button>
-        </form>
+            </form>
 
-        <div className="auth-switch-row">
-          {isSignUp ? "Have an account? " : "Need an account? "}
-          <button className="auth-switch" type="button" onClick={() => { setError(""); setLegalAccepted(false); setIsSignUp(!isSignUp); }}>
-            {isSignUp ? "Log in" : "Sign up"}
-          </button>
+            {!resetToken && <div className="auth-switch-row">
+              {resetRequest ? "Remembered your password? " : isSignUp ? "Have an account? " : "Need an account? "}
+              <button className="auth-switch" type="button" onClick={() => { setError(""); setResetMessage(""); setResetRequest(false); setLegalAccepted(false); setAgeConfirmed(false); setMfaCode(""); setIsSignUp(!isSignUp); }}>
+                {resetRequest ? "Log in" : isSignUp ? "Log in" : "Sign up"}
+              </button>
+              {!isSignUp && !resetRequest && <button className="auth-switch auth-forgot" type="button" onClick={() => { setError(""); setResetRequest(true); setEmail(""); }}>Forgot password?</button>}
+            </div>}
+            <div className="auth-footnote"><span className="auth-footnote-dot" /> Core tracking is free · No credit card required</div>
+          </section>
         </div>
-        <div className="auth-footnote">Core tracking is free. No credit card required.</div>
       </div>
     </div>
   );
 };
 
-export default function App() {
+function AppShell({ initialAuth = "" }) {
   const [token, setToken] = useState(() => localStorage.getItem("token") || null);
-  const [showLogin, setShowLogin] = useState(false);
-  const [authIntent, setAuthIntent] = useState("login");
+  const [showLogin, setShowLogin] = useState(() => Boolean(initialAuth) && !localStorage.getItem("token"));
+  const [authIntent, setAuthIntent] = useState(initialAuth || "login");
+  const [passwordResetToken, setPasswordResetToken] = useState(() => new URLSearchParams(window.location.search).get("reset") || "");
   const [apps, setApps] = useState(() => {
     try {
       const cached = localStorage.getItem(APPS_CACHE_KEY);
@@ -420,7 +522,19 @@ export default function App() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
+    const verificationToken = params.get("verify");
+    if (verificationToken) {
+      fetch(`${API_BASE}/security/email/verify?token=${encodeURIComponent(verificationToken)}`, { method: "POST" })
+        .then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          toast(res.ok ? "Email verified" : data.detail || "Email verification failed", res.ok ? "#34d399" : "#f87171");
+        })
+        .catch(() => toast("Email verification failed", "#f87171"));
+      window.history.replaceState({}, "", window.location.pathname);
+      return;
+    }
     const checkout = params.get("checkout");
+    if (params.get("reset")) setShowLogin(true);
     if (!checkout) return;
 
     toast(checkout === "success" ? "Payment confirmed. Your plan will update shortly." : "Checkout cancelled", checkout === "success" ? "#34d399" : "#fbbf24");
@@ -805,9 +919,16 @@ export default function App() {
     });
 
   const handleLogout = () => {
+    fetch(`${API_BASE}/logout`, { method: "POST", headers: baseAuthHeaders }).catch(() => {});
     clearAuthSession();
     setPage("landing");
     toast("Logged out securely", "#8b91b8");
+  };
+
+  const handleAccountDeleted = () => {
+    clearAuthSession();
+    setPage("landing");
+    toast("Account deleted", "#8b91b8");
   };
 
   const addHunt = async () => {
@@ -1423,7 +1544,7 @@ export default function App() {
     return (
       <>
         <LandingPage onStart={() => openAuth("signup")} onLogin={() => openAuth("login")} onOpenApp={() => setPage("tracker")} onCheckout={startCheckout} checkoutLoading={checkoutLoading} />
-        <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} />
+        <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} resetToken={passwordResetToken} onResetComplete={() => { setPasswordResetToken(""); window.history.replaceState({}, "", window.location.pathname); }} />
         <div className="toasts">
           {toasts.map((t) => (
             <div key={t.id} className="toast">
@@ -1438,6 +1559,7 @@ export default function App() {
 
   return (
     <>
+      <a className="skip-link" href="#main-content">Skip to main content</a>
       <div className="shell">
         <nav className="sb">
           <div className="sb-logo">
@@ -1490,7 +1612,7 @@ export default function App() {
           </div>
         </nav>
 
-        <div className="main">
+        <div className="main" id="main-content" tabIndex="-1">
           <div className="topbar">
             <div className="topbar-title">
               {page === "tracker" ? "Tracker" : page === "search" ? "Job Search" : page === "analytics" ? "Analytics" : page === "pricing" ? "Pricing" : "Settings"}
@@ -1632,6 +1754,8 @@ export default function App() {
                   createWorkspaceInvite={createWorkspaceInvite}
                   updateWorkspaceMember={updateWorkspaceMember}
                   removeWorkspaceMember={removeWorkspaceMember}
+                  authHeaders={authHeaders}
+                  onAccountDeleted={handleAccountDeleted}
                 />
               </Suspense>
             )}
@@ -1639,7 +1763,7 @@ export default function App() {
         </div>
       </div>
 
-      <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} />
+      <LoginModal show={showLogin} setShow={setShowLogin} setToken={setToken} toast={toast} authIntent={authIntent} resetToken={passwordResetToken} onResetComplete={() => { setPasswordResetToken(""); window.history.replaceState({}, "", window.location.pathname); }} />
       {modal && (
         <Suspense fallback={null}>
           <Modal
@@ -1693,4 +1817,16 @@ export default function App() {
       </div>
     </>
   );
+}
+
+export default function App() {
+  const pathname = window.location.pathname.replace(/\/+$/, "") || "/";
+  if (pathname === "/login") return <AppShell initialAuth="login" />;
+  if (pathname === "/signup") return <AppShell initialAuth="signup" />;
+  if (pathname === "/terms") return <LegalPage kind="terms" />;
+  if (pathname === "/privacy") return <LegalPage kind="privacy" />;
+  if (pathname === "/cookies") return <LegalPage kind="cookies" />;
+  if (pathname === "/disclaimer") return <LegalPage kind="disclaimer" />;
+  if (pathname === "/acceptable-use") return <LegalPage kind="acceptable" />;
+  return <AppShell />;
 }

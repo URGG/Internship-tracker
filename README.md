@@ -189,9 +189,12 @@ Optional:
 - `TURNSTILE_EXPECTED_HOSTNAME` to restrict verification to the deployed frontend hostname
 - `RAPIDAPI_KEY` is optional; leave it unset when each user enters their own key in Settings
 - `USAJOBS_API_KEY` and `USAJOBS_USER_AGENT` are optional; set both only after requesting and accepting access under the USAJOBS API terms
-- `TERMS_URL` and `PRIVACY_URL` should point to the deployed, attorney-reviewed policies
+- `TERMS_URL` and `PRIVACY_URL` should point to the deployed, attorney-reviewed policies; `COOKIES_URL`, `DISCLAIMER_URL`, and `ACCEPTABLE_USE_URL` can point to the matching public legal pages
 - `TERMS_VERSION` and `PRIVACY_VERSION` identify the policy versions recorded at signup
 - `REQUIRE_LEGAL_CONSENT=true` requires current Terms and Privacy acceptance before account creation (enabled automatically in production)
+- `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_BUSINESS_ADDRESS`, `MINIMUM_AGE`, and `REQUIRE_AGE_CONFIRMATION` configure the public legal pages and age policy
+- `REQUIRE_EMAIL_VERIFICATION`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_USE_TLS` enable verification and password-reset delivery
+- `AUTH_SESSION_REQUIRED=true` enables server-side session revocation; `MFA_ISSUER` names the authenticator-app issuer
 
 If `DATABASE_URL` is not set, the backend falls back to a local SQLite database for development. Use Postgres or another managed SQL database in production.
 
@@ -245,7 +248,10 @@ Optional:
 
 - `VITE_API_BASE_URL`
 - `VITE_TURNSTILE_SITE_KEY` to show the Cloudflare Turnstile widget in the auth modal; leave unset to keep Turnstile disabled
-- `VITE_TERMS_URL`, `VITE_PRIVACY_URL`, `VITE_TERMS_VERSION`, and `VITE_PRIVACY_VERSION` should match the backend's attorney-reviewed policy URLs and versions
+- `VITE_TERMS_URL`, `VITE_PRIVACY_URL`, `VITE_COOKIES_URL`, `VITE_DISCLAIMER_URL`, and `VITE_ACCEPTABLE_USE_URL` configure the public legal-page links
+- `VITE_TERMS_VERSION`, `VITE_PRIVACY_VERSION`, `VITE_LEGAL_ENTITY_NAME`, `VITE_LEGAL_CONTACT_EMAIL`, `VITE_MINIMUM_AGE`, and `VITE_POLICY_EFFECTIVE_DATE` populate the public policy pages and should match the backend configuration
+
+See [docs/COMPLIANCE_CHECKLIST.md](docs/COMPLIANCE_CHECKLIST.md) for the production review and operational checklist.
 
 If `VITE_API_BASE_URL` is not set, the frontend uses the production backend URL configured in `intership-finder/src/config.js`.
 

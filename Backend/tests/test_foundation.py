@@ -14,6 +14,11 @@ from main import (  # noqa: E402
     Organization,
     OrganizationInvitation,
     OrganizationMember,
+    AuthSession,
+    SecurityToken,
+    PrivacyPreference,
+    PrivacyRequest,
+    LegalAcceptance,
     SearchSubscription,
     SessionLocal,
     User,
@@ -35,6 +40,11 @@ from fastapi.testclient import TestClient
 
 
 def clear_database(db):
+    db.query(PrivacyRequest).delete()
+    db.query(PrivacyPreference).delete()
+    db.query(SecurityToken).delete()
+    db.query(AuthSession).delete()
+    db.query(LegalAcceptance).delete()
     db.query(ApplicationEvent).delete()
     db.query(UsageEvent).delete()
     db.query(SearchSubscription).delete()

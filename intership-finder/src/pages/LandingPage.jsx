@@ -1,4 +1,5 @@
 import Icon from "../components/shared/Icon";
+import { ACCEPTABLE_USE_URL, COOKIES_URL, DISCLAIMER_URL, LEGAL_CONTACT_EMAIL, PRIVACY_URL, TERMS_URL } from "../config";
 
 const sampleJobs = [
   { company: "Northstar Labs", role: "Software Engineering Intern", tag: "Applied", cls: "sa" },
@@ -173,6 +174,15 @@ export default function LandingPage({ onStart, onLogin, onOpenApp, onCheckout, c
           ))}
         </div>
       </section>
+      <footer className="landing-footer" aria-label="Legal and support links">
+        <span>intern.track</span>
+        <a href={PRIVACY_URL}>Privacy</a>
+        <a href={TERMS_URL}>Terms</a>
+        <a href={COOKIES_URL}>Cookies & storage</a>
+        <a href={DISCLAIMER_URL}>AI disclaimer</a>
+        <a href={ACCEPTABLE_USE_URL}>Acceptable use</a>
+        <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>Contact</a>
+      </footer>
     </main>
   );
 }

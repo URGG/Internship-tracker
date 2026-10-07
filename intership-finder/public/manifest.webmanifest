@@ -1,0 +1,14 @@
+{
+  "name": "intern.track",
+  "short_name": "intern.track",
+  "description": "A private internship and job application tracker.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#191919",
+  "theme_color": "#191919",
+  "icons": [{
+    "src": "/favicon.svg",
+    "sizes": "any",
+    "type": "image/svg+xml"
+  }]
+}

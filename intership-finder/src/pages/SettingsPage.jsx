@@ -3,6 +3,7 @@ import * as pdfjsLib from "pdfjs-dist";
 import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import Autocomplete from "../components/shared/Autocomplete";
 import Icon from "../components/shared/Icon";
+import PrivacyCenter from "../components/shared/PrivacyCenter";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -44,6 +45,8 @@ export default function SettingsPage({
   createWorkspaceInvite,
   updateWorkspaceMember,
   removeWorkspaceMember,
+  authHeaders,
+  onAccountDeleted,
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const [isReading, setIsReading] = useState(false);
@@ -129,7 +132,8 @@ export default function SettingsPage({
   };
 
   return (
-    <div style={{ maxWidth: 900, margin: "0 auto", paddingBottom: "40px" }}>
+      <div style={{ maxWidth: 900, margin: "0 auto", paddingBottom: "40px" }}>
+      <PrivacyCenter authHeaders={authHeaders} toast={toast} onAccountDeleted={onAccountDeleted} />
       <div className="scard">
         <h3>Free Mode</h3>
         <p style={{ fontSize: 12, color: "var(--txt2)", marginBottom: 12 }}>

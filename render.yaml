@@ -19,3 +19,35 @@ services:
         sync: false
       - key: CORS_ORIGINS
         sync: false
+      - key: TERMS_URL
+        sync: false
+      - key: PRIVACY_URL
+        sync: false
+      - key: COOKIES_URL
+        sync: false
+      - key: DISCLAIMER_URL
+        sync: false
+      - key: ACCEPTABLE_USE_URL
+        sync: false
+      - key: TERMS_VERSION
+        value: v1
+      - key: PRIVACY_VERSION
+        value: v1
+      - key: LEGAL_ENTITY_NAME
+        sync: false
+      - key: LEGAL_CONTACT_EMAIL
+        sync: false
+      - key: LEGAL_BUSINESS_ADDRESS
+        sync: false
+      - key: USAJOBS_API_KEY
+        sync: false
+      - key: USAJOBS_USER_AGENT
+        sync: false
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_USERNAME
+        sync: false
+      - key: SMTP_PASSWORD
+        sync: false
+      - key: SMTP_FROM
+        sync: false

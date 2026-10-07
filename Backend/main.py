@@ -4,6 +4,10 @@ import requests
 import secrets
 import time
 import hashlib
+import base64
+import hmac
+import struct
+import smtplib
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional, List
@@ -14,6 +18,7 @@ from ipaddress import ip_address
 from pathlib import Path
 from socket import getaddrinfo
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from email.message import EmailMessage
 from fastapi import FastAPI, HTTPException, Depends, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -94,7 +99,24 @@ TERMS_VERSION = os.getenv("TERMS_VERSION", "v1")
 PRIVACY_VERSION = os.getenv("PRIVACY_VERSION", "v1")
 TERMS_URL = os.getenv("TERMS_URL", f"{FRONTEND_URL}/terms")
 PRIVACY_URL = os.getenv("PRIVACY_URL", f"{FRONTEND_URL}/privacy")
+COOKIES_URL = os.getenv("COOKIES_URL", f"{FRONTEND_URL}/cookies")
+DISCLAIMER_URL = os.getenv("DISCLAIMER_URL", f"{FRONTEND_URL}/disclaimer")
+ACCEPTABLE_USE_URL = os.getenv("ACCEPTABLE_USE_URL", f"{FRONTEND_URL}/acceptable-use")
 REQUIRE_LEGAL_CONSENT = os.getenv("REQUIRE_LEGAL_CONSENT", "true" if APP_ENV == "production" else "false").lower() == "true"
+LEGAL_ENTITY_NAME = os.getenv("LEGAL_ENTITY_NAME", "intern.track")
+LEGAL_CONTACT_EMAIL = os.getenv("LEGAL_CONTACT_EMAIL", os.getenv("SUPPORT_EMAIL", "support@example.com"))
+LEGAL_BUSINESS_ADDRESS = os.getenv("LEGAL_BUSINESS_ADDRESS", "")
+MINIMUM_AGE = max(13, int(os.getenv("MINIMUM_AGE", "13")))
+REQUIRE_AGE_CONFIRMATION = os.getenv("REQUIRE_AGE_CONFIRMATION", "true").lower() == "true"
+REQUIRE_EMAIL_VERIFICATION = os.getenv("REQUIRE_EMAIL_VERIFICATION", "false").lower() == "true"
+SMTP_HOST = os.getenv("SMTP_HOST")
+SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+SMTP_USERNAME = os.getenv("SMTP_USERNAME")
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD")
+SMTP_FROM = os.getenv("SMTP_FROM", LEGAL_CONTACT_EMAIL)
+SMTP_USE_TLS = os.getenv("SMTP_USE_TLS", "true").lower() == "true"
+AUTH_SESSION_REQUIRED = os.getenv("AUTH_SESSION_REQUIRED", "true").lower() == "true"
+MFA_ISSUER = os.getenv("MFA_ISSUER", "intern.track")
 
 JSEARCH_TERMS_URL = os.getenv(
     "JSEARCH_TERMS_URL",
@@ -104,6 +126,17 @@ USAJOBS_TERMS_URL = "https://developer.usajobs.gov/apirequest/index"
 
 if APP_ENV == "production" and FRONTEND_URL.startswith(("http://localhost", "http://127.0.0.1")):
     raise RuntimeError("CRITICAL: FRONTEND_URL must be your deployed frontend URL in production.")
+
+if APP_ENV == "production" and (
+    not os.getenv("TERMS_URL")
+    or not os.getenv("PRIVACY_URL")
+    or not os.getenv("LEGAL_CONTACT_EMAIL")
+    or LEGAL_CONTACT_EMAIL.endswith("@example.com")
+):
+    raise RuntimeError("CRITICAL: Set attorney-reviewed TERMS_URL, PRIVACY_URL, and LEGAL_CONTACT_EMAIL in production.")
+
+if APP_ENV == "production" and REQUIRE_EMAIL_VERIFICATION and (not SMTP_HOST or not SMTP_FROM):
+    raise RuntimeError("CRITICAL: SMTP_HOST and SMTP_FROM are required when email verification is enabled.")
 
 def parse_csv_env(value: Optional[str]) -> List[str]:
     if not value:
@@ -194,6 +227,51 @@ class User(Base):
     subscription_status = Column(String, default="free")
     current_period_end = Column(String, nullable=True)
     profile_json = Column(Text, nullable=True)
+    email_verified = Column(Boolean, default=False, nullable=False)
+    mfa_secret_enc = Column(String, nullable=True)
+    mfa_enabled = Column(Boolean, default=False, nullable=False)
+    created_at = Column(String, nullable=True)
+
+class AuthSession(Base):
+    __tablename__ = "auth_sessions"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    jti = Column(String, unique=True, index=True, nullable=False)
+    created_at = Column(String, nullable=False)
+    expires_at = Column(String, nullable=False)
+    last_seen_at = Column(String, nullable=False)
+    revoked_at = Column(String, nullable=True)
+    user_agent = Column(String, nullable=True)
+    ip_hash = Column(String, nullable=True)
+
+class SecurityToken(Base):
+    __tablename__ = "security_tokens"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    token_hash = Column(String, unique=True, index=True, nullable=False)
+    purpose = Column(String, index=True, nullable=False)
+    created_at = Column(String, nullable=False)
+    expires_at = Column(String, nullable=False)
+    used_at = Column(String, nullable=True)
+
+class PrivacyPreference(Base):
+    __tablename__ = "privacy_preferences"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True, nullable=False)
+    analytics = Column(Boolean, default=False, nullable=False)
+    marketing = Column(Boolean, default=False, nullable=False)
+    personalized_search = Column(Boolean, default=True, nullable=False)
+    updated_at = Column(String, nullable=False)
+
+class PrivacyRequest(Base):
+    __tablename__ = "privacy_requests"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    request_type = Column(String, index=True, nullable=False)
+    status = Column(String, default="received", index=True, nullable=False)
+    details = Column(Text, nullable=True)
+    requested_at = Column(String, nullable=False)
+    completed_at = Column(String, nullable=True)
 
 class JobApplication(Base):
     __tablename__ = "applications"
@@ -307,10 +385,36 @@ class UserAuth(BaseModel):
     privacy_accepted: bool = False
     terms_version: Optional[str] = None
     privacy_version: Optional[str] = None
+    age_confirmed: bool = False
+    mfa_code: Optional[str] = None
 
 class KeysUpdate(BaseModel):
     rapid_key: Optional[str] = None
     gemini_key: Optional[str] = None
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str
+
+class PasswordResetRequest(BaseModel):
+    email: str
+
+class PasswordResetConfirm(BaseModel):
+    token: str
+    new_password: str
+
+class PrivacyPreferenceUpdate(BaseModel):
+    analytics: bool = False
+    marketing: bool = False
+    personalized_search: bool = True
+
+class PrivacyRequestCreate(BaseModel):
+    request_type: str
+    details: Optional[str] = None
+
+class AccountDeleteRequest(BaseModel):
+    password: str
+    confirmation: str
 
 class CandidateProfile(BaseModel):
     first_name: Optional[str] = ""
@@ -504,6 +608,10 @@ def ensure_user_columns():
         "subscription_status": "VARCHAR DEFAULT 'free'",
         "current_period_end": "VARCHAR",
         "profile_json": "TEXT",
+        "email_verified": "BOOLEAN DEFAULT FALSE",
+        "mfa_secret_enc": "VARCHAR",
+        "mfa_enabled": "BOOLEAN DEFAULT FALSE",
+        "created_at": "VARCHAR",
     }
 
     if not existing_columns:
@@ -565,6 +673,9 @@ def ensure_production_indexes():
         "CREATE INDEX IF NOT EXISTS ix_applications_organization_status ON applications (organization_id, status)",
         "CREATE INDEX IF NOT EXISTS ix_applications_provider_job_id ON applications (provider, provider_job_id)",
         "CREATE INDEX IF NOT EXISTS ix_usage_events_organization_category_date ON usage_events (organization_id, category, created_at)",
+        "CREATE INDEX IF NOT EXISTS ix_auth_sessions_user_active ON auth_sessions (user_id, revoked_at, expires_at)",
+        "CREATE INDEX IF NOT EXISTS ix_security_tokens_user_purpose ON security_tokens (user_id, purpose, used_at)",
+        "CREATE INDEX IF NOT EXISTS ix_privacy_requests_user_status ON privacy_requests (user_id, status)",
     ]
     with engine.begin() as connection:
         for statement in statements:
@@ -597,12 +708,24 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     try:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
         username: str = payload.get("sub")
-        if username is None: raise HTTPException(status_code=401, detail="Invalid token")
+        jti: str = payload.get("jti")
+        if username is None or not jti:
+            raise HTTPException(status_code=401, detail="Invalid token")
     except jwt.PyJWTError:
         raise HTTPException(status_code=401, detail="Invalid token")
 
     user = db.query(User).filter(User.username == username).first()
     if user is None: raise HTTPException(status_code=401, detail="User not found")
+    session = db.query(AuthSession).filter(
+        AuthSession.user_id == user.id,
+        AuthSession.jti == jti,
+        AuthSession.revoked_at.is_(None),
+    ).first()
+    if AUTH_SESSION_REQUIRED and not session:
+        raise HTTPException(status_code=401, detail="Session expired or revoked")
+    if session:
+        session.last_seen_at = utc_now_iso()
+        db.commit()
     return user
 
 WORKSPACE_ROLES = {"owner", "admin", "member", "viewer"}
@@ -865,13 +988,114 @@ def add_usage_event(
 def request_id_for(request: Optional[Request]):
     return getattr(getattr(request, "state", None), "request_id", None)
 
+def hash_security_token(value: str) -> str:
+    return hashlib.sha256(f"{JWT_SECRET}:{value}".encode()).hexdigest()
+
+def create_security_token(db: Session, user_id: int, purpose: str, ttl_minutes: int = 30) -> str:
+    raw_token = secrets.token_urlsafe(32)
+    db.add(SecurityToken(
+        user_id=user_id,
+        token_hash=hash_security_token(raw_token),
+        purpose=purpose,
+        created_at=utc_now_iso(),
+        expires_at=(datetime.now(timezone.utc) + timedelta(minutes=ttl_minutes)).isoformat(timespec="seconds").replace("+00:00", "Z"),
+    ))
+    return raw_token
+
+def get_security_token(db: Session, raw_token: str, purpose: str) -> SecurityToken:
+    token = db.query(SecurityToken).filter(
+        SecurityToken.token_hash == hash_security_token(raw_token.strip()),
+        SecurityToken.purpose == purpose,
+        SecurityToken.used_at.is_(None),
+    ).first()
+    if not token or token.expires_at < utc_now_iso():
+        raise HTTPException(status_code=400, detail="This security link is invalid or expired.")
+    return token
+
+def send_email_message(recipient: str, subject: str, body: str) -> bool:
+    if not SMTP_HOST or not SMTP_FROM:
+        logger.warning("Email delivery is not configured recipient=%s subject=%s", recipient, subject)
+        return False
+    message = EmailMessage()
+    message["From"] = SMTP_FROM
+    message["To"] = recipient
+    message["Subject"] = subject
+    message.set_content(body)
+    try:
+        with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=10) as server:
+            if SMTP_USE_TLS:
+                server.starttls()
+            if SMTP_USERNAME and SMTP_PASSWORD:
+                server.login(SMTP_USERNAME, SMTP_PASSWORD)
+            server.send_message(message)
+        return True
+    except (OSError, smtplib.SMTPException):
+        logger.exception("Email delivery failed recipient=%s subject=%s", recipient, subject)
+        return False
+
+def create_auth_session(db: Session, user: User, jti: str, expires_at: datetime, request: Request):
+    db.add(AuthSession(
+        user_id=user.id,
+        jti=jti,
+        created_at=utc_now_iso(),
+        expires_at=expires_at.isoformat(timespec="seconds").replace("+00:00", "Z"),
+        last_seen_at=utc_now_iso(),
+        user_agent=(request.headers.get("user-agent") or "")[:500] or None,
+        ip_hash=hash_client_ip(request),
+    ))
+
+def generate_totp_secret() -> str:
+    return base64.b32encode(secrets.token_bytes(20)).decode().rstrip("=")
+
+def verify_totp(secret: str, code: Optional[str], window: int = 1) -> bool:
+    normalized = re.sub(r"\s+", "", str(code or ""))
+    if not re.fullmatch(r"\d{6}", normalized):
+        return False
+    try:
+        key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8), casefold=True)
+    except (ValueError, base64.binascii.Error):
+        return False
+    current_counter = int(time.time() // 30)
+    for offset in range(-window, window + 1):
+        counter = current_counter + offset
+        digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+        index = digest[-1] & 0x0F
+        number = (struct.unpack(">I", digest[index:index + 4])[0] & 0x7FFFFFFF) % 1000000
+        if hmac.compare_digest(f"{number:06d}", normalized):
+            return True
+    return False
+
+def get_or_create_privacy_preferences(db: Session, user_id: int) -> PrivacyPreference:
+    preferences = db.query(PrivacyPreference).filter(PrivacyPreference.user_id == user_id).first()
+    if preferences:
+        return preferences
+    preferences = PrivacyPreference(user_id=user_id, updated_at=utc_now_iso())
+    db.add(preferences)
+    db.flush()
+    return preferences
+
 def legal_payload():
     return {
+        "entity_name": LEGAL_ENTITY_NAME,
+        "contact_email": LEGAL_CONTACT_EMAIL,
+        "business_address": LEGAL_BUSINESS_ADDRESS,
+        "minimum_age": MINIMUM_AGE,
         "terms_version": TERMS_VERSION,
         "privacy_version": PRIVACY_VERSION,
         "terms_url": TERMS_URL,
         "privacy_url": PRIVACY_URL,
+        "cookies_url": COOKIES_URL,
+        "disclaimer_url": DISCLAIMER_URL,
+        "acceptable_use_url": ACCEPTABLE_USE_URL,
         "required_for_signup": REQUIRE_LEGAL_CONSENT,
+        "email_verification_required": REQUIRE_EMAIL_VERIFICATION,
+        "subprocessors": [
+            {"name": "Supabase/PostgreSQL", "purpose": "database hosting", "configured": bool(SQLALCHEMY_DATABASE_URL and "postgres" in SQLALCHEMY_DATABASE_URL)},
+            {"name": "Stripe", "purpose": "paid plan checkout", "configured": bool(stripe and STRIPE_SECRET_KEY)},
+            {"name": "Google Gemini", "purpose": "optional AI features", "configured": bool(SERVER_GEMINI_API_KEY)},
+            {"name": "RapidAPI/JSearch", "purpose": "optional job search", "configured": bool(normalize_rapidapi_key(SERVER_RAPIDAPI_KEY))},
+            {"name": "USAJOBS", "purpose": "optional federal job search", "configured": bool(USAJOBS_API_KEY and USAJOBS_USER_AGENT)},
+        ],
         "provider_disclosures": [
             {
                 "provider": "JSearch",
@@ -1794,6 +2018,10 @@ def health(db: Session = Depends(get_db)):
         "application_events",
         "usage_events",
         "legal_acceptances",
+        "auth_sessions",
+        "security_tokens",
+        "privacy_preferences",
+        "privacy_requests",
     ]
     schema = {table_name: False for table_name in required_tables}
     try:
@@ -1830,12 +2058,20 @@ def health(db: Session = Depends(get_db)):
         },
         "gemini_model": GEMINI_MODEL,
         "environment": APP_ENV,
+        "legal": {
+            "terms_configured": bool(TERMS_URL and not TERMS_URL.endswith("/terms")),
+            "privacy_configured": bool(PRIVACY_URL and not PRIVACY_URL.endswith("/privacy")),
+            "contact_configured": bool(LEGAL_CONTACT_EMAIL and "@" in LEGAL_CONTACT_EMAIL),
+            "email_verification_configured": bool(not REQUIRE_EMAIL_VERIFICATION or (SMTP_HOST and SMTP_FROM)),
+        },
     }
     return JSONResponse(status_code=200 if database == "ok" else 503, content=payload)
 
 @app.post("/api/signup")
 def signup(user: UserAuth, request: Request, db: Session = Depends(get_db)):
     verify_turnstile(user.turnstile_token, request, "signup")
+    if APP_ENV == "production" and REQUIRE_AGE_CONFIRMATION and not user.age_confirmed:
+        raise HTTPException(status_code=400, detail=f"You must confirm that you are at least {MINIMUM_AGE} years old to create an account.")
     if REQUIRE_LEGAL_CONSENT:
         if not user.terms_accepted or not user.privacy_accepted:
             raise HTTPException(status_code=400, detail="You must accept the Terms of Service and Privacy Policy to create an account.")
@@ -1844,20 +2080,38 @@ def signup(user: UserAuth, request: Request, db: Session = Depends(get_db)):
     username_seed = user.username or re.sub(r"[^a-z0-9._-]+", "-", (user.email or "").split("@")[0].lower())
     username = normalize_username(username_seed)
     email = normalize_email(user.email)
+    if APP_ENV == "production" and REQUIRE_EMAIL_VERIFICATION and not email:
+        raise HTTPException(status_code=400, detail="An email address is required to create an account.")
     validate_password(user.password)
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="Username taken")
     if email and db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="Email already registered")
     hashed_pw = bcrypt.hashpw(user.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-    new_user = User(username=username, email=email, hashed_password=hashed_pw)
+    new_user = User(
+        username=username,
+        email=email,
+        hashed_password=hashed_pw,
+        email_verified=not REQUIRE_EMAIL_VERIFICATION,
+        created_at=utc_now_iso(),
+    )
     db.add(new_user)
     db.flush()
     ensure_default_workspace(db, new_user)
     if user.terms_accepted and user.privacy_accepted:
         record_legal_acceptance(db, new_user, request)
+    get_or_create_privacy_preferences(db, new_user.id)
+    verification_sent = False
+    if REQUIRE_EMAIL_VERIFICATION and email:
+        verification_token = create_security_token(db, new_user.id, "email_verification", ttl_minutes=60 * 24)
+        verification_url = f"{FRONTEND_URL}/?verify={verification_token}"
+        verification_sent = send_email_message(
+            email,
+            f"Verify your {LEGAL_ENTITY_NAME} email",
+            f"Verify your email by opening this link:\n\n{verification_url}\n\nThis link expires in 24 hours.",
+        )
     db.commit()
-    return {"message": "Success"}
+    return {"message": "Success", "email_verification_required": REQUIRE_EMAIL_VERIFICATION, "verification_sent": verification_sent}
 
 @app.get("/api/legal")
 def get_legal_configuration():
@@ -1873,18 +2127,168 @@ def login(user: UserAuth, request: Request, db: Session = Depends(get_db)):
         db_user = db.query(User).filter(User.username == normalize_username(identifier)).first()
     if not db_user or not bcrypt.checkpw(user.password.encode('utf-8'), db_user.hashed_password.encode('utf-8')):
         raise HTTPException(status_code=401, detail="Invalid credentials")
+    if REQUIRE_EMAIL_VERIFICATION and not db_user.email_verified:
+        raise HTTPException(status_code=403, detail="Verify your email address before signing in.")
+    if db_user.mfa_enabled:
+        if not verify_totp(cipher_suite.decrypt(db_user.mfa_secret_enc.encode()).decode(), user.mfa_code):
+            raise HTTPException(status_code=401, detail="A valid six-digit MFA code is required.")
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(days=JWT_TTL_DAYS)
+    jti = uuid.uuid4().hex
     token = jwt.encode(
         {
             "sub": db_user.username,
-            "iat": datetime.now(timezone.utc),
-            "exp": datetime.now(timezone.utc) + timedelta(days=JWT_TTL_DAYS),
-            "jti": uuid.uuid4().hex,
+            "iat": now,
+            "exp": expires_at,
+            "jti": jti,
             "typ": "access",
         },
         JWT_SECRET,
         algorithm=ALGORITHM,
     )
+    create_auth_session(db, db_user, jti, expires_at, request)
+    db.commit()
     return {"access_token": token, "token_type": "bearer", "username": db_user.username}
+
+@app.post("/api/logout")
+def logout(token: str = Depends(oauth2_scheme), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        payload = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM])
+    except jwt.PyJWTError:
+        return {"message": "Logged out"}
+    session = db.query(AuthSession).filter(AuthSession.user_id == current_user.id, AuthSession.jti == payload.get("jti")).first()
+    if session:
+        session.revoked_at = utc_now_iso()
+        db.commit()
+    return {"message": "Logged out"}
+
+@app.post("/api/security/email/verify")
+def verify_email(token: str, db: Session = Depends(get_db)):
+    security_token = get_security_token(db, token, "email_verification")
+    user = db.query(User).filter(User.id == security_token.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found")
+    user.email_verified = True
+    security_token.used_at = utc_now_iso()
+    db.commit()
+    return {"message": "Email verified"}
+
+@app.post("/api/security/email/resend")
+def resend_email_verification(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.email:
+        raise HTTPException(status_code=400, detail="Add an email address to your profile first.")
+    if current_user.email_verified:
+        return {"message": "Email is already verified"}
+    token = create_security_token(db, current_user.id, "email_verification", ttl_minutes=60 * 24)
+    sent = send_email_message(
+        current_user.email,
+        f"Verify your {LEGAL_ENTITY_NAME} email",
+        f"Verify your email by opening this link:\n\n{FRONTEND_URL}/?verify={token}\n\nThis link expires in 24 hours.",
+    )
+    db.commit()
+    return {"message": "Verification email queued", "sent": sent}
+
+@app.post("/api/security/password-reset/request")
+def request_password_reset(payload: PasswordResetRequest, db: Session = Depends(get_db)):
+    email = normalize_email(payload.email)
+    user = db.query(User).filter(User.email == email).first()
+    sent = False
+    if user and user.email:
+        token = create_security_token(db, user.id, "password_reset", ttl_minutes=30)
+        sent = send_email_message(
+            user.email,
+            f"Reset your {LEGAL_ENTITY_NAME} password",
+            f"Reset your password by opening this link:\n\n{FRONTEND_URL}/?reset={token}\n\nThis link expires in 30 minutes.",
+        )
+    db.commit()
+    return {"message": "If an account matches that email, reset instructions were sent.", "sent": sent if APP_ENV != "production" else None}
+
+@app.post("/api/security/password-reset/confirm")
+def confirm_password_reset(payload: PasswordResetConfirm, db: Session = Depends(get_db)):
+    security_token = get_security_token(db, payload.token, "password_reset")
+    validate_password(payload.new_password)
+    user = db.query(User).filter(User.id == security_token.user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="Account not found")
+    user.hashed_password = bcrypt.hashpw(payload.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    security_token.used_at = utc_now_iso()
+    db.query(AuthSession).filter(AuthSession.user_id == user.id, AuthSession.revoked_at.is_(None)).update({"revoked_at": utc_now_iso()}, synchronize_session=False)
+    db.commit()
+    return {"message": "Password reset. Sign in again with your new password."}
+
+@app.post("/api/security/change-password")
+def change_password(payload: PasswordChange, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not bcrypt.checkpw(payload.current_password.encode("utf-8"), current_user.hashed_password.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Current password is incorrect")
+    validate_password(payload.new_password)
+    current_user.hashed_password = bcrypt.hashpw(payload.new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    db.query(AuthSession).filter(AuthSession.user_id == current_user.id, AuthSession.revoked_at.is_(None)).update({"revoked_at": utc_now_iso()}, synchronize_session=False)
+    db.commit()
+    return {"message": "Password changed. Sign in again on your devices."}
+
+@app.get("/api/security/status")
+def security_status(current_user: User = Depends(get_current_user)):
+    return {
+        "email": current_user.email,
+        "email_verified": bool(current_user.email_verified),
+        "mfa_enabled": bool(current_user.mfa_enabled),
+        "email_verification_required": REQUIRE_EMAIL_VERIFICATION,
+    }
+
+@app.get("/api/security/sessions")
+def list_security_sessions(token: str = Depends(oauth2_scheme), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    try:
+        current_jti = jwt.decode(token, JWT_SECRET, algorithms=[ALGORITHM]).get("jti")
+    except jwt.PyJWTError:
+        current_jti = None
+    sessions = db.query(AuthSession).filter(AuthSession.user_id == current_user.id, AuthSession.revoked_at.is_(None)).order_by(AuthSession.last_seen_at.desc()).all()
+    return [{
+        "id": session.id,
+        "created_at": session.created_at,
+        "last_seen_at": session.last_seen_at,
+        "expires_at": session.expires_at,
+        "user_agent": session.user_agent or "Unknown device",
+        "current": session.jti == current_jti,
+    } for session in sessions]
+
+@app.delete("/api/security/sessions/{session_id}")
+def revoke_security_session(session_id: int, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    session = db.query(AuthSession).filter(AuthSession.id == session_id, AuthSession.user_id == current_user.id, AuthSession.revoked_at.is_(None)).first()
+    if not session:
+        raise HTTPException(status_code=404, detail="Session not found")
+    session.revoked_at = utc_now_iso()
+    db.commit()
+    return {"message": "Session revoked"}
+
+@app.post("/api/security/mfa/setup")
+def setup_mfa(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    secret = cipher_suite.decrypt(current_user.mfa_secret_enc.encode()).decode() if current_user.mfa_secret_enc else generate_totp_secret()
+    current_user.mfa_secret_enc = cipher_suite.encrypt(secret.encode()).decode()
+    db.commit()
+    label = f"{MFA_ISSUER}:{current_user.username}"
+    return {"secret": secret, "otpauth_url": f"otpauth://totp/{label}?secret={secret}&issuer={MFA_ISSUER}", "enabled": bool(current_user.mfa_enabled)}
+
+@app.post("/api/security/mfa/enable")
+def enable_mfa(code: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.mfa_secret_enc:
+        raise HTTPException(status_code=400, detail="Start MFA setup first")
+    secret = cipher_suite.decrypt(current_user.mfa_secret_enc.encode()).decode()
+    if not verify_totp(secret, code, window=1):
+        raise HTTPException(status_code=400, detail="Invalid MFA code")
+    current_user.mfa_enabled = True
+    db.commit()
+    return {"message": "MFA enabled"}
+
+@app.post("/api/security/mfa/disable")
+def disable_mfa(code: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if current_user.mfa_enabled:
+        secret = cipher_suite.decrypt(current_user.mfa_secret_enc.encode()).decode()
+        if not verify_totp(secret, code, window=1):
+            raise HTTPException(status_code=400, detail="Invalid MFA code")
+    current_user.mfa_enabled = False
+    current_user.mfa_secret_enc = None
+    db.commit()
+    return {"message": "MFA disabled"}
 
 @app.post("/api/update-keys")
 def update_keys(keys: KeysUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -1916,6 +2320,111 @@ def update_profile(profile: CandidateProfile, current_user: User = Depends(get_c
     current_user.profile_json = json.dumps(payload, separators=(",", ":"))
     db.commit()
     return {"profile": payload}
+
+def privacy_job_payload(job: JobApplication):
+    return {field: getattr(job, field) for field in [
+        "id", "company", "role", "status", "source", "applied_date", "deadline", "location", "remote", "link", "notes",
+        "recruiter_name", "recruiter_email", "referral_name", "interview_stage", "next_action_date", "follow_up_sent",
+        "last_contact_date", "resume_version", "cover_letter_version", "provider", "provider_job_id", "source_url",
+        "source_attribution", "source_terms_url", "content_fetched_at",
+    ]}
+
+@app.get("/api/privacy/preferences")
+def get_privacy_preferences(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    preferences = get_or_create_privacy_preferences(db, current_user.id)
+    db.commit()
+    return {"analytics": preferences.analytics, "marketing": preferences.marketing, "personalized_search": preferences.personalized_search, "updated_at": preferences.updated_at}
+
+@app.put("/api/privacy/preferences")
+def update_privacy_preferences(payload: PrivacyPreferenceUpdate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    preferences = get_or_create_privacy_preferences(db, current_user.id)
+    preferences.analytics = payload.analytics
+    preferences.marketing = payload.marketing
+    preferences.personalized_search = payload.personalized_search
+    preferences.updated_at = utc_now_iso()
+    db.commit()
+    return {"analytics": preferences.analytics, "marketing": preferences.marketing, "personalized_search": preferences.personalized_search, "updated_at": preferences.updated_at}
+
+@app.get("/api/privacy/export")
+def export_personal_data(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    memberships = db.query(OrganizationMember).filter(OrganizationMember.user_id == current_user.id).all()
+    organization_ids = [membership.organization_id for membership in memberships]
+    organizations = db.query(Organization).filter(Organization.id.in_(organization_ids)).all() if organization_ids else []
+    preferences = get_or_create_privacy_preferences(db, current_user.id)
+    db.commit()
+    return {
+        "exported_at": utc_now_iso(),
+        "account": {
+            "username": current_user.username,
+            "email": current_user.email,
+            "email_verified": current_user.email_verified,
+            "created_at": current_user.created_at,
+        },
+        "profile": load_profile(current_user),
+        "applications": [privacy_job_payload(job) for job in db.query(JobApplication).filter(JobApplication.user_id == current_user.id).all()],
+        "search_subscriptions": [
+            {"id": item.id, "query": item.query, "location": item.location, "job_type": item.job_type, "organization_id": item.organization_id}
+            for item in db.query(SearchSubscription).filter(SearchSubscription.user_id == current_user.id).all()
+        ],
+        "workspaces": [{"id": item.id, "name": item.name, "slug": item.slug, "role": next((m.role for m in memberships if m.organization_id == item.id), None)} for item in organizations],
+        "privacy_preferences": {"analytics": preferences.analytics, "marketing": preferences.marketing, "personalized_search": preferences.personalized_search},
+        "legal_acceptances": [
+            {"terms_version": item.terms_version, "privacy_version": item.privacy_version, "accepted_at": item.accepted_at, "consent_source": item.consent_source}
+            for item in db.query(LegalAcceptance).filter(LegalAcceptance.user_id == current_user.id).all()
+        ],
+    }
+
+@app.get("/api/privacy/requests")
+def list_privacy_requests(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    return db.query(PrivacyRequest).filter(PrivacyRequest.user_id == current_user.id).order_by(PrivacyRequest.requested_at.desc()).all()
+
+@app.post("/api/privacy/requests")
+def create_privacy_request(payload: PrivacyRequestCreate, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    request_type = (payload.request_type or "").strip().lower()
+    if request_type not in {"access", "correct", "delete", "opt_out", "limit"}:
+        raise HTTPException(status_code=400, detail="Invalid privacy request type")
+    privacy_request = PrivacyRequest(
+        user_id=current_user.id,
+        request_type=request_type,
+        status="received",
+        details=(payload.details or "").strip()[:4000] or None,
+        requested_at=utc_now_iso(),
+    )
+    db.add(privacy_request)
+    db.commit()
+    db.refresh(privacy_request)
+    return privacy_request
+
+@app.delete("/api/privacy/account")
+def delete_account(payload: AccountDeleteRequest, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if payload.confirmation.strip() != f"DELETE {current_user.username}":
+        raise HTTPException(status_code=400, detail=f'Type DELETE {current_user.username} to confirm account deletion.')
+    if not bcrypt.checkpw(payload.password.encode("utf-8"), current_user.hashed_password.encode("utf-8")):
+        raise HTTPException(status_code=401, detail="Password is incorrect")
+
+    owned_workspaces = db.query(Organization).filter(Organization.owner_id == current_user.id).all()
+    for workspace in owned_workspaces:
+        active_members = db.query(OrganizationMember).filter(
+            OrganizationMember.organization_id == workspace.id,
+            OrganizationMember.status == "active",
+            OrganizationMember.user_id != current_user.id,
+        ).count()
+        if active_members:
+            raise HTTPException(status_code=409, detail=f"Transfer ownership or remove other members from '{workspace.name}' before deleting your account.")
+
+    owned_workspace_ids = [workspace.id for workspace in owned_workspaces]
+    if owned_workspace_ids:
+        for model in (JobApplication, SearchSubscription, UsageEvent, ApplicationEvent, OrganizationInvitation, OrganizationMember):
+            db.query(model).filter(model.organization_id.in_(owned_workspace_ids)).delete(synchronize_session=False)
+        db.query(Organization).filter(Organization.id.in_(owned_workspace_ids)).delete(synchronize_session=False)
+
+    db.query(OrganizationInvitation).filter(OrganizationInvitation.invited_by == current_user.id).delete(synchronize_session=False)
+    for model in (ApplicationEvent, UsageEvent, SearchSubscription, JobApplication, OrganizationMember, LegalAcceptance, SecurityToken, AuthSession, PrivacyRequest):
+        db.query(model).filter(model.user_id == current_user.id).delete(synchronize_session=False)
+    db.query(PrivacyPreference).filter(PrivacyPreference.user_id == current_user.id).delete(synchronize_session=False)
+    db.delete(current_user)
+    db.commit()
+    return {"message": "Account and associated personal data deleted"}
 
 @app.get("/api/billing/me")
 def get_billing_status(workspace: Organization = Depends(get_current_workspace), current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
