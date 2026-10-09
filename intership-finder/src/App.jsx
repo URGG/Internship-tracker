@@ -14,8 +14,6 @@ const SearchPage = lazy(() => import("./pages/SearchPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const Modal = lazy(() => import("./components/shared/Modal"));
 
-const APPS_CACHE_KEY = "appsCache";
-const SUBS_CACHE_KEY = "subsCache";
 const WORKSPACE_KEY = "activeWorkspaceId";
 const DEFAULT_BILLING = {
   plan: "free",
@@ -264,7 +262,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
           mfa_code: isSignUp || !mfaRequired ? null : mfaCode || null,
         }),
       });
-      const data = await res.json();
+      const data = await res.json().catch(() => ({}));
 
       if (!res.ok && !isSignUp && !resetRequest && !resetToken && res.status === 401 && String(data.detail || "").toLowerCase().includes("mfa")) {
         setMfaRequired(true);
@@ -420,15 +418,10 @@ function AppShell({ initialAuth = "" }) {
   const [showLogin, setShowLogin] = useState(() => Boolean(initialAuth) && !localStorage.getItem("token"));
   const [authIntent, setAuthIntent] = useState(initialAuth || "login");
   const [passwordResetToken, setPasswordResetToken] = useState(() => new URLSearchParams(window.location.search).get("reset") || "");
-  const [apps, setApps] = useState(() => {
-    try {
-      const cached = localStorage.getItem(APPS_CACHE_KEY);
-      const parsed = cached ? JSON.parse(cached) : [];
-      return Array.isArray(parsed) ? parsed.map(normalizeApp) : [];
-    } catch {
-      return [];
-    }
-  });
+  // Applications and hunts are server-owned data. Start empty and hydrate only
+  // after the authenticated workspace has been resolved so one account can
+  // never briefly see another account's browser cache.
+  const [apps, setApps] = useState([]);
   const [view, setView] = useState("board");
   const [page, setPage] = useState(() => (localStorage.getItem("token") ? "tracker" : "landing"));
   const [srcF, setSrcF] = useState("all");
@@ -477,14 +470,7 @@ function AppShell({ initialAuth = "" }) {
   const [toasts, setToasts] = useState([]);
   const [checkoutLoading, setCheckoutLoading] = useState(null);
   const [pendingCheckoutPlan, setPendingCheckoutPlan] = useState(null);
-  const [subs, setSubs] = useState(() => {
-    try {
-      const cached = localStorage.getItem(SUBS_CACHE_KEY);
-      return cached ? JSON.parse(cached) : [];
-    } catch {
-      return [];
-    }
-  });
+  const [subs, setSubs] = useState([]);
   const [hQ, setHQ] = useState("");
   const [hL, setHL] = useState("");
   const [hLoading, setHLoading] = useState(false);
@@ -522,8 +508,8 @@ function AppShell({ initialAuth = "" }) {
   const clearAuthSession = useCallback(() => {
     localStorage.removeItem("token");
     localStorage.removeItem("username");
-    localStorage.removeItem(APPS_CACHE_KEY);
-    localStorage.removeItem(SUBS_CACHE_KEY);
+    localStorage.removeItem("appsCache");
+    localStorage.removeItem("subsCache");
     localStorage.removeItem(WORKSPACE_KEY);
     setToken(null);
     setApps([]);
@@ -607,14 +593,6 @@ function AppShell({ initialAuth = "" }) {
       cancelled = true;
     };
   }, [baseAuthHeaders, clearAuthSession, openAuth, token, toast]);
-
-  useEffect(() => {
-    localStorage.setItem(APPS_CACHE_KEY, JSON.stringify(apps));
-  }, [apps]);
-
-  useEffect(() => {
-    localStorage.setItem(SUBS_CACHE_KEY, JSON.stringify(subs));
-  }, [subs]);
 
   const downloadFile = (filename, content, type) => {
     const blob = new Blob([content], { type });
@@ -703,8 +681,6 @@ function AppShell({ initialAuth = "" }) {
       setWorkspaceMembers([]);
       setActiveWorkspaceId("");
       setProfile(DEFAULT_PROFILE);
-      localStorage.removeItem(APPS_CACHE_KEY);
-      localStorage.removeItem(SUBS_CACHE_KEY);
       return;
     }
 
@@ -731,7 +707,7 @@ function AppShell({ initialAuth = "" }) {
         }
       })
       .catch((error) => {
-        if (!cancelled) toast(`${error.message || "Workspace sync failed"}. Showing cached data.`, "#fbbf24");
+        if (!cancelled) toast(`${error.message || "Workspace sync failed"}. Please refresh and try again.`, "#fbbf24");
       });
     return () => {
       cancelled = true;
@@ -769,7 +745,7 @@ function AppShell({ initialAuth = "" }) {
         if (billingData && typeof billingData === "object") setBilling({ ...DEFAULT_BILLING, ...billingData });
       })
       .catch((error) => {
-        if (!cancelled) toast(`${error.message || "Backend sync failed"}. Showing cached data.`, "#fbbf24");
+        if (!cancelled) toast(`${error.message || "Backend sync failed"}. Please refresh and try again.`, "#fbbf24");
       });
     return () => {
       cancelled = true;

@@ -215,7 +215,7 @@ Set these environment variables on the Render backend service before deploying:
 - `JWT_TTL_DAYS` can be set to control access-token lifetime; the default is 7 days
 - `TURNSTILE_SECRET_KEY` and `TURNSTILE_EXPECTED_HOSTNAME` if bot protection is enabled
 
-Recommended Render service settings are `Root Directory: Backend`, `Build Command: pip install -r requirements.txt`, `Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT`, and `Health Check Path: /api/health`. Copy the complete Postgres connection string from Supabase Project Settings > Database > Connect into Render's `DATABASE_URL`; do not use the frontend Supabase URL or anon key. The included `render.yaml` is a secret-free Blueprint template for these settings.
+Recommended Render service settings are `Root Directory: Backend`, `Build Command: pip install -r requirements.txt`, `Start Command: alembic upgrade head && uvicorn main:app --host 0.0.0.0 --port $PORT`, and `Health Check Path: /api/health`. Copy the complete Postgres connection string from Supabase Project Settings > Database > Connect into Render's `DATABASE_URL`; do not use the frontend Supabase URL or anon key. The included `render.yaml` runs the idempotent schema migrations before starting the API.
 
 After deployment, open `/api/health`. A healthy production response should report `database: "ok"`, `database_backend: "postgresql"`, `environment: "production"`, and all schema flags as `true`. If built-in paid AI is enabled, it should also report `server_gemini_configured: true`.
 

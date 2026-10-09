@@ -6,9 +6,10 @@ import hashlib
 import hmac
 import struct
 import time
+from pathlib import Path
 
 os.environ.setdefault("APP_ENV", "development")
-os.environ.setdefault("DATABASE_URL", "sqlite:///./Backend/test-ci.db")
+os.environ.setdefault("DATABASE_URL", f"sqlite:///{(Path(__file__).resolve().parents[1] / 'test-ci.db').as_posix()}")
 os.environ.setdefault("JWT_SECRET", "ci-only-jwt-secret-that-is-long-enough")
 os.environ.setdefault("ENCRYPTION_KEY", "MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=")
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -225,6 +226,48 @@ def test_api_records_events_and_exposes_authoritative_analytics():
     assert body["total"] == 2
     assert body["submitted"] == 1
     assert body["responseRate"] == "0.0"
+
+
+def test_email_login_and_saved_data_survive_a_fresh_client():
+    db = SessionLocal()
+    clear_database(db)
+    db.close()
+    app = __import__("main").app
+
+    signup = TestClient(app)
+    assert signup.post("/api/signup", json={
+        "username": "email-login-test",
+        "email": "email-login@example.com",
+        "password": "password123",
+    }).status_code == 200
+    login = signup.post("/api/login", json={"email": "EMAIL-LOGIN@EXAMPLE.COM", "password": "password123"})
+    assert login.status_code == 200
+    headers = {"Authorization": f"Bearer {login.json()['access_token']}"}
+
+    created = signup.post("/api/jobs", headers=headers, json={
+        "company": "Persistence Co",
+        "role": "Software Intern",
+        "status": "Applied",
+        "source": "LinkedIn",
+    })
+    assert created.status_code == 200
+
+    fresh_client = TestClient(app)
+    jobs = fresh_client.get("/api/jobs", headers=headers)
+    assert jobs.status_code == 200
+    assert [(job["company"], job["role"]) for job in jobs.json()] == [("Persistence Co", "Software Intern")]
+
+
+def test_health_reports_required_schema():
+    db = SessionLocal()
+    try:
+        response = __import__("main").health(db)
+        assert response.status_code == 200
+        body = json.loads(response.body)
+        assert body["database"] == "ok"
+        assert all(body["schema"].values())
+    finally:
+        db.close()
 
 
 def test_mfa_is_optional_until_enabled_and_then_required_at_login():

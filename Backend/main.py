@@ -2019,26 +2019,30 @@ def scrape_job_posting(url: str) -> dict:
 
 @app.get("/api/health")
 def health(db: Session = Depends(get_db)):
-    required_tables = [
-        "users",
-        "organizations",
-        "organization_members",
-        "organization_invitations",
-        "applications",
-        "search_subscriptions",
-        "application_events",
-        "usage_events",
-        "legal_acceptances",
-        "auth_sessions",
-        "security_tokens",
-        "privacy_preferences",
-        "privacy_requests",
-    ]
-    schema = {table_name: False for table_name in required_tables}
+    required_schema = {
+        "users": {"id", "username", "email", "hashed_password", "profile_json", "email_verified", "mfa_secret_enc", "mfa_enabled"},
+        "organizations": {"id", "name", "slug", "owner_id", "plan", "created_at"},
+        "organization_members": {"id", "organization_id", "user_id", "role", "status", "created_at"},
+        "organization_invitations": {"id", "organization_id", "invited_by", "email", "role", "token", "expires_at", "accepted_at", "created_at"},
+        "applications": {"id", "organization_id", "user_id", "company", "role", "status", "source", "activity_log", "application_packet", "provider", "source_url"},
+        "search_subscriptions": {"id", "organization_id", "user_id", "query", "location", "job_type"},
+        "application_events": {"id", "organization_id", "user_id", "application_id", "event_type", "occurred_at"},
+        "usage_events": {"id", "organization_id", "user_id", "feature", "created_at", "category", "units"},
+        "legal_acceptances": {"id", "user_id", "terms_version", "privacy_version", "accepted_at"},
+        "auth_sessions": {"id", "user_id", "jti", "created_at", "expires_at", "last_seen_at", "revoked_at"},
+        "security_tokens": {"id", "user_id", "token_hash", "purpose", "created_at", "expires_at", "used_at"},
+        "privacy_preferences": {"id", "user_id", "analytics", "marketing", "personalized_search", "updated_at"},
+        "privacy_requests": {"id", "user_id", "request_type", "status", "requested_at"},
+    }
+    schema = {table_name: False for table_name in required_schema}
     try:
         db.execute(text("SELECT 1"))
         inspector = inspect(db.bind)
-        schema = {table_name: inspector.has_table(table_name) for table_name in required_tables}
+        schema = {
+            table_name: inspector.has_table(table_name)
+            and required_columns.issubset({column["name"] for column in inspector.get_columns(table_name)})
+            for table_name, required_columns in required_schema.items()
+        }
         database = "ok" if all(schema.values()) else "degraded"
     except Exception as exc:
         logger.exception("Database health check failed: %s", exc)
