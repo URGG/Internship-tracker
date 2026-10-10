@@ -3,6 +3,7 @@ import {
   COOKIES_URL,
   DISCLAIMER_URL,
   LEGAL_CONTACT_EMAIL,
+  LEGAL_BUSINESS_ADDRESS,
   LEGAL_EFFECTIVE_DATE,
   LEGAL_ENTITY_NAME,
   MINIMUM_AGE,
@@ -10,6 +11,7 @@ import {
   PRIVACY_VERSION,
   TERMS_URL,
   TERMS_VERSION,
+  NOTICE_AT_COLLECTION_URL,
 } from "../config";
 
 const policyConfig = {
@@ -43,6 +45,12 @@ const policyConfig = {
     version: "v1",
     intro: "This policy describes the conduct expected when using intern.track and third-party job sources.",
   },
+  notice: {
+    title: "Notice at Collection",
+    eyebrow: "Privacy notice",
+    version: PRIVACY_VERSION,
+    intro: "This notice summarizes the categories of information intern.track collects, why it is used, the providers that may process it, and the choices available to you.",
+  },
 };
 
 function PolicyNavigation({ current }) {
@@ -52,6 +60,7 @@ function PolicyNavigation({ current }) {
     ["cookies", "Cookies", COOKIES_URL],
     ["disclaimer", "Disclaimer", DISCLAIMER_URL],
     ["acceptable", "Acceptable use", ACCEPTABLE_USE_URL],
+    ["notice", "Notice at collection", NOTICE_AT_COLLECTION_URL],
   ];
 
   return (
@@ -68,7 +77,7 @@ function PolicyNavigation({ current }) {
 function ContactLine({ children }) {
   return (
     <p>
-      {children} Please contact <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>{LEGAL_CONTACT_EMAIL}</a> if you have a question or need to make a privacy request.
+      {children} Please contact <a href={`mailto:${LEGAL_CONTACT_EMAIL}`}>{LEGAL_CONTACT_EMAIL}</a>{LEGAL_BUSINESS_ADDRESS ? ` or write to ${LEGAL_BUSINESS_ADDRESS}` : ""} if you have a question or need to make a privacy request.
     </p>
   );
 }
@@ -128,7 +137,7 @@ function PrivacyContent() {
       <p>We share information with service providers that help us host data, authenticate accounts, send email, process payments, protect against abuse, provide job search, or provide AI features that you choose to use. A provider may receive the minimum query, job details, or content needed for the requested feature. Provider names and purposes are disclosed in the app when applicable, and each provider may have its own terms and privacy policy.</p>
 
       <h2>5. Browser storage</h2>
-      <p>The app stores session and convenience data in your browser, including authentication state, cached tracker data, workspace selection, and locally saved resume text. See the <a href={COOKIES_URL}>Cookie & Storage Notice</a> for details. You can clear browser storage, but doing so may sign you out or remove local drafts and cached data.</p>
+      <p>The app stores essential session and convenience data in your browser, including authentication state and active-workspace selection. Profile, resume, tracker, and workspace records are synchronized with the server rather than kept as an account cache in browser storage. See the <a href={COOKIES_URL}>Cookie & Storage Notice</a> for details. You can clear browser storage, but doing so may sign you out and reset your selected workspace.</p>
 
       <h2>6. Your choices and rights</h2>
       <p>Settings includes privacy preferences, data export, privacy requests, password controls, session revocation, and account deletion. Depending on where you live, you may also have rights to access, correct, delete, restrict, or object to certain processing. We may ask for information needed to verify a request and may retain limited records for security, fraud prevention, payment, dispute resolution, or legal obligations.</p>
@@ -150,7 +159,7 @@ function CookiesContent() {
   return (
     <>
       <h2>What we use</h2>
-      <p>intern.track currently uses essential browser storage rather than advertising cookies. The web app uses local storage to keep your sign-in state, cache tracker data for a smoother experience, remember the active workspace, and preserve a locally saved resume draft.</p>
+      <p>intern.track currently uses essential browser storage rather than advertising cookies. The web app uses local storage to keep your sign-in state and remember the active workspace. Tracker, profile, and resume data are saved through the authenticated API.</p>
 
       <h2>Essential security technologies</h2>
       <p>When bot protection is enabled, Cloudflare Turnstile may load its own security technology to distinguish normal users from automated abuse. Payment and job-search providers may also use their own technologies when you visit their sites or use their hosted flows.</p>
@@ -209,6 +218,28 @@ function AcceptableUseContent() {
   );
 }
 
+function NoticeAtCollectionContent() {
+  return (
+    <>
+      <h2>Categories we collect</h2>
+      <p>Depending on the features you use, intern.track collects account identifiers such as username and email; profile, education, contact, resume, and application information; saved job and workspace data; security and session records; privacy choices and requests; payment status; and device or network information used to protect the service. We do not ask for Social Security numbers, passwords for employer sites, demographic information, or uploaded files to provide the core tracker.</p>
+
+      <h2>Why we collect it</h2>
+      <p>We use this information to create and secure accounts, save and sync your tracker, provide workspaces, process requested search or AI features, operate paid plans, prevent abuse, troubleshoot the service, respond to privacy requests, and meet legal or security obligations. AI and job-search providers receive only the information needed for a feature you choose to use.</p>
+
+      <h2>Sale and sharing</h2>
+      <p>intern.track does not sell personal information. It does not share personal information for cross-context behavioral advertising. Service providers may process information on our behalf for hosting, email, payments, security, job search, or AI features, subject to their applicable terms and agreements.</p>
+
+      <h2>Retention</h2>
+      <p>Account and tracker information is kept while your account is active or as needed to provide the service. Security, payment, legal, and audit records may be retained longer when necessary for security, fraud prevention, dispute resolution, or legal obligations. Account deletion and privacy requests are available in Settings and are handled subject to those limited exceptions.</p>
+
+      <h2>Your choices</h2>
+      <p>You can review the <a href={PRIVACY_URL}>Privacy Policy</a>, manage optional preferences, download your personal data, request correction or deletion, and delete your account from Settings. Optional product-usage analytics remain off unless you opt in. You can also contact us using the address listed below.</p>
+      <ContactLine>For questions about this notice,</ContactLine>
+    </>
+  );
+}
+
 export default function LegalPage({ kind = "privacy" }) {
   const current = policyConfig[kind] ? kind : "privacy";
   const page = policyConfig[current];
@@ -234,6 +265,7 @@ export default function LegalPage({ kind = "privacy" }) {
           {current === "cookies" && <CookiesContent />}
           {current === "disclaimer" && <DisclaimerContent />}
           {current === "acceptable" && <AcceptableUseContent />}
+          {current === "notice" && <NoticeAtCollectionContent />}
         </article>
 
         <footer className="legal-footer">

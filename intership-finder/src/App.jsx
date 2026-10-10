@@ -1,7 +1,7 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BLANK } from "./utils/constants";
 import { getActionSignal, uid } from "./utils/helpers";
-import { ACCEPTABLE_USE_URL, API_BASE, COOKIES_URL, DISCLAIMER_URL, LEGAL_ENTITY_NAME, MINIMUM_AGE, PRIVACY_URL, PRIVACY_VERSION, TERMS_URL, TERMS_VERSION, TURNSTILE_SITE_KEY } from "./config";
+import { ACCEPTABLE_USE_URL, API_BASE, COOKIES_URL, DISCLAIMER_URL, LEGAL_ENTITY_NAME, MINIMUM_AGE, NOTICE_AT_COLLECTION_URL, PRIVACY_URL, PRIVACY_VERSION, TERMS_URL, TERMS_VERSION, TURNSTILE_SITE_KEY } from "./config";
 import Icon from "./components/shared/Icon";
 import ThemeToggle from "./components/shared/ThemeToggle";
 import LandingPage from "./pages/LandingPage";
@@ -329,6 +329,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
             </div>
             <div className="auth-aside-links">
               <a href={PRIVACY_URL}>Privacy by default</a>
+              <a href={NOTICE_AT_COLLECTION_URL}>Notice at collection</a>
               <a href={COOKIES_URL}>Storage notice</a>
             </div>
           </aside>
@@ -374,7 +375,7 @@ const LoginModal = ({ show, setShow, setToken, toast, authIntent, resetToken, on
               {isSignUp && !resetToken && (
                 <label className="auth-consent">
                   <input type="checkbox" checked={legalAccepted} onChange={(event) => setLegalAccepted(event.target.checked)} />
-                  <span>I agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer">Terms of Service</a> and <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy Policy</a>.</span>
+                  <span>I agree to the <a href={TERMS_URL} target="_blank" rel="noreferrer">Terms of Service</a>, <a href={PRIVACY_URL} target="_blank" rel="noreferrer">Privacy Policy</a>, and <a href={NOTICE_AT_COLLECTION_URL} target="_blank" rel="noreferrer">Notice at Collection</a>.</span>
                 </label>
               )}
               {isSignUp && !resetToken && (
@@ -450,7 +451,7 @@ function AppShell({ initialAuth = "" }) {
   const [intelData, setIntelData] = useState(null);
   const [intelLoad, setIntelLoad] = useState(false);
 
-  const [resumeTxt, setResumeTxt] = useState(() => localStorage.getItem("resumeTxt") || "");
+  const [resumeTxt, setResumeTxt] = useState("");
   const [profile, setProfile] = useState(DEFAULT_PROFILE);
   const [profileLoading, setProfileLoading] = useState(false);
   const [profileSaving, setProfileSaving] = useState(false);
@@ -516,6 +517,7 @@ function AppShell({ initialAuth = "" }) {
     setSubs([]);
     setBilling(DEFAULT_BILLING);
     setProfile(DEFAULT_PROFILE);
+    setResumeTxt("");
     setAnalyticsData(null);
     setWorkspaces([]);
     setWorkspaceMembers([]);
@@ -559,12 +561,9 @@ function AppShell({ initialAuth = "" }) {
   }, [refreshBilling, toast]);
 
   useEffect(() => {
-    localStorage.setItem("resumeTxt", resumeTxt);
-  }, [resumeTxt]);
-
-  useEffect(() => {
     if (!token) {
       setProfile(DEFAULT_PROFILE);
+      setResumeTxt("");
       return undefined;
     }
     let cancelled = false;
@@ -581,7 +580,7 @@ function AppShell({ initialAuth = "" }) {
         if (cancelled) return;
         const nextProfile = { ...DEFAULT_PROFILE, ...(data.profile || {}) };
         setProfile(nextProfile);
-        if (nextProfile.resume_text || !localStorage.getItem("resumeTxt")) setResumeTxt(nextProfile.resume_text || "");
+        setResumeTxt(nextProfile.resume_text || "");
       })
       .catch((error) => {
         if (!cancelled && error.message !== "Session expired") toast(error.message || "Profile sync failed", "#fbbf24");
@@ -1834,5 +1833,6 @@ export default function App() {
   if (pathname === "/cookies") return <LegalPage kind="cookies" />;
   if (pathname === "/disclaimer") return <LegalPage kind="disclaimer" />;
   if (pathname === "/acceptable-use") return <LegalPage kind="acceptable" />;
+  if (pathname === "/notice-at-collection") return <LegalPage kind="notice" />;
   return <AppShell />;
 }

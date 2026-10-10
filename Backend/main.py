@@ -32,6 +32,7 @@ from cryptography.fernet import Fernet
 from cryptography.fernet import InvalidToken
 from dotenv import load_dotenv
 import json
+from contextlib import asynccontextmanager
 
 logger = logging.getLogger("intern_track")
 if not logger.handlers:
@@ -102,6 +103,7 @@ PRIVACY_URL = os.getenv("PRIVACY_URL", f"{FRONTEND_URL}/privacy")
 COOKIES_URL = os.getenv("COOKIES_URL", f"{FRONTEND_URL}/cookies")
 DISCLAIMER_URL = os.getenv("DISCLAIMER_URL", f"{FRONTEND_URL}/disclaimer")
 ACCEPTABLE_USE_URL = os.getenv("ACCEPTABLE_USE_URL", f"{FRONTEND_URL}/acceptable-use")
+NOTICE_AT_COLLECTION_URL = os.getenv("NOTICE_AT_COLLECTION_URL", f"{FRONTEND_URL}/notice-at-collection")
 REQUIRE_LEGAL_CONSENT = os.getenv("REQUIRE_LEGAL_CONSENT", "true" if APP_ENV == "production" else "false").lower() == "true"
 LEGAL_ENTITY_NAME = os.getenv("LEGAL_ENTITY_NAME", "intern.track")
 LEGAL_CONTACT_EMAIL = os.getenv("LEGAL_CONTACT_EMAIL", os.getenv("SUPPORT_EMAIL", "support@example.com"))
@@ -132,7 +134,9 @@ missing_legal_config = [
     name for name, configured in [
         ("TERMS_URL", bool(os.getenv("TERMS_URL"))),
         ("PRIVACY_URL", bool(os.getenv("PRIVACY_URL"))),
-        ("LEGAL_CONTACT_EMAIL", bool(os.getenv("LEGAL_CONTACT_EMAIL")) and not LEGAL_CONTACT_EMAIL.endswith("@example.com")),
+        ("NOTICE_AT_COLLECTION_URL", bool(os.getenv("NOTICE_AT_COLLECTION_URL"))),
+        ("LEGAL_CONTACT_EMAIL", bool(LEGAL_CONTACT_EMAIL.strip()) and not LEGAL_CONTACT_EMAIL.endswith("@example.com")),
+        ("LEGAL_BUSINESS_ADDRESS", bool(LEGAL_BUSINESS_ADDRESS.strip())),
     ] if not configured
 ]
 if APP_ENV == "production" and missing_legal_config:
@@ -544,7 +548,28 @@ class ApplicationPacketRequest(BaseModel):
     description: str
     context: str
 
-app = FastAPI()
+def cleanup_expired_security_records():
+    """Keep one-time tokens and expired sessions from becoming indefinite personal data."""
+    now = utc_now_iso()
+    retention_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat(timespec="seconds").replace("+00:00", "Z")
+    db = SessionLocal()
+    try:
+        db.query(SecurityToken).filter(
+            (SecurityToken.expires_at < retention_cutoff) | (SecurityToken.used_at.isnot(None) & (SecurityToken.used_at < retention_cutoff))
+        ).delete(synchronize_session=False)
+        db.query(AuthSession).filter(
+            (AuthSession.expires_at < now) | (AuthSession.revoked_at.isnot(None) & (AuthSession.revoked_at < retention_cutoff))
+        ).delete(synchronize_session=False)
+        db.commit()
+    finally:
+        db.close()
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    cleanup_expired_security_records()
+    yield
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -556,18 +581,37 @@ app.add_middleware(
 
 @app.middleware("http")
 async def add_request_metadata(request: Request, call_next):
-    request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+    supplied_request_id = request.headers.get("X-Request-ID", "")
+    request_id = supplied_request_id if re.fullmatch(r"[A-Za-z0-9._-]{1,64}", supplied_request_id) else uuid.uuid4().hex
     request.state.request_id = request_id
+
+    def finish_response(response):
+        response.headers["X-Request-ID"] = request_id
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store"
+        if APP_ENV == "production" or request.url.scheme == "https":
+            response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+    max_body_bytes = 4 * 1024 * 1024
+    content_length = request.headers.get("content-length")
+    if content_length:
+        try:
+            declared_length = int(content_length)
+            if declared_length < 0 or declared_length > max_body_bytes:
+                return finish_response(JSONResponse(status_code=413, content={"detail": "Request body is too large."}))
+        except ValueError:
+            return finish_response(JSONResponse(status_code=400, content={"detail": "Invalid Content-Length header."}))
     try:
         response = await call_next(request)
     except Exception:
         logger.exception("Unhandled request error method=%s path=%s request_id=%s", request.method, request.url.path, request_id)
         raise
-    response.headers["X-Request-ID"] = request_id
-    response.headers["X-Content-Type-Options"] = "nosniff"
-    response.headers["X-Frame-Options"] = "DENY"
-    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
-    return response
+    return finish_response(response)
 
 def get_db():
     db = SessionLocal()
@@ -982,6 +1026,12 @@ def add_usage_event(
     details: Optional[dict] = None,
     organization_id: Optional[int] = None,
 ):
+    # Product-usage analytics are optional. AI usage remains recorded because it
+    # is required for quota/billing enforcement and service operation.
+    if category == "product":
+        preferences = db.query(PrivacyPreference).filter(PrivacyPreference.user_id == user_id).first()
+        if not preferences or not preferences.analytics:
+            return
     db.add(UsageEvent(
         user_id=user_id,
         organization_id=organization_id,
@@ -1022,8 +1072,9 @@ def get_security_token(db: Session, raw_token: str, purpose: str) -> SecurityTok
     return token
 
 def send_email_message(recipient: str, subject: str, body: str) -> bool:
+    recipient_domain = (recipient.rsplit("@", 1)[-1].lower() if "@" in recipient else "unknown")[:255]
     if not SMTP_HOST or not SMTP_FROM:
-        logger.warning("Email delivery is not configured recipient=%s subject=%s", recipient, subject)
+        logger.warning("Email delivery is not configured recipient_domain=%s subject=%s", recipient_domain, subject)
         return False
     message = EmailMessage()
     message["From"] = SMTP_FROM
@@ -1039,7 +1090,7 @@ def send_email_message(recipient: str, subject: str, body: str) -> bool:
             server.send_message(message)
         return True
     except (OSError, smtplib.SMTPException):
-        logger.exception("Email delivery failed recipient=%s subject=%s", recipient, subject)
+        logger.exception("Email delivery failed recipient_domain=%s subject=%s", recipient_domain, subject)
         return False
 
 def create_auth_session(db: Session, user: User, jti: str, expires_at: datetime, request: Request):
@@ -1096,6 +1147,7 @@ def legal_payload():
         "cookies_url": COOKIES_URL,
         "disclaimer_url": DISCLAIMER_URL,
         "acceptable_use_url": ACCEPTABLE_USE_URL,
+        "notice_at_collection_url": NOTICE_AT_COLLECTION_URL,
         "legal_config_strict": STRICT_LEGAL_CONFIG,
         "missing_legal_config": missing_legal_config,
         "required_for_signup": REQUIRE_LEGAL_CONSENT,
@@ -2074,9 +2126,11 @@ def health(db: Session = Depends(get_db)):
         "gemini_model": GEMINI_MODEL,
         "environment": APP_ENV,
         "legal": {
-            "terms_configured": bool(TERMS_URL),
-            "privacy_configured": bool(PRIVACY_URL),
+            "terms_configured": "TERMS_URL" not in missing_legal_config,
+            "privacy_configured": "PRIVACY_URL" not in missing_legal_config,
+            "notice_at_collection_configured": "NOTICE_AT_COLLECTION_URL" not in missing_legal_config,
             "contact_configured": bool(LEGAL_CONTACT_EMAIL and "@" in LEGAL_CONTACT_EMAIL and not LEGAL_CONTACT_EMAIL.endswith("@example.com")),
+            "business_address_configured": bool(LEGAL_BUSINESS_ADDRESS.strip()),
             "strict_config": STRICT_LEGAL_CONFIG,
             "missing_config": missing_legal_config,
             "email_verification_configured": bool(not REQUIRE_EMAIL_VERIFICATION or (SMTP_HOST and SMTP_FROM)),
@@ -2365,7 +2419,7 @@ def privacy_job_payload(job: JobApplication):
         "id", "company", "role", "status", "source", "applied_date", "deadline", "location", "remote", "link", "notes",
         "recruiter_name", "recruiter_email", "referral_name", "interview_stage", "next_action_date", "follow_up_sent",
         "last_contact_date", "resume_version", "cover_letter_version", "provider", "provider_job_id", "source_url",
-        "source_attribution", "source_terms_url", "content_fetched_at",
+        "source_attribution", "source_terms_url", "content_fetched_at", "activity_log", "application_packet",
     ]}
 
 @app.get("/api/privacy/preferences")
@@ -2381,6 +2435,11 @@ def update_privacy_preferences(payload: PrivacyPreferenceUpdate, current_user: U
     preferences.marketing = payload.marketing
     preferences.personalized_search = payload.personalized_search
     preferences.updated_at = utc_now_iso()
+    if not preferences.analytics:
+        db.query(UsageEvent).filter(
+            UsageEvent.user_id == current_user.id,
+            UsageEvent.category == "product",
+        ).delete(synchronize_session=False)
     db.commit()
     return {"analytics": preferences.analytics, "marketing": preferences.marketing, "personalized_search": preferences.personalized_search, "updated_at": preferences.updated_at}
 
@@ -2404,6 +2463,55 @@ def export_personal_data(current_user: User = Depends(get_current_user), db: Ses
         "search_subscriptions": [
             {"id": item.id, "query": item.query, "location": item.location, "job_type": item.job_type, "organization_id": item.organization_id}
             for item in db.query(SearchSubscription).filter(SearchSubscription.user_id == current_user.id).all()
+        ],
+        "application_events": [
+            {
+                "id": item.id,
+                "organization_id": item.organization_id,
+                "application_id": item.application_id,
+                "event_type": item.event_type,
+                "from_status": item.from_status,
+                "to_status": item.to_status,
+                "occurred_at": item.occurred_at,
+                "effective_date": item.effective_date,
+                "details": item.details,
+            }
+            for item in db.query(ApplicationEvent).filter(ApplicationEvent.user_id == current_user.id).order_by(ApplicationEvent.occurred_at.asc()).all()
+        ],
+        "usage_events": [
+            {
+                "id": item.id,
+                "organization_id": item.organization_id,
+                "feature": item.feature,
+                "category": item.category,
+                "units": item.units,
+                "provider": item.provider,
+                "created_at": item.created_at,
+                "details": item.details,
+            }
+            for item in db.query(UsageEvent).filter(UsageEvent.user_id == current_user.id).order_by(UsageEvent.created_at.asc()).all()
+        ],
+        "privacy_requests": [
+            {
+                "id": item.id,
+                "request_type": item.request_type,
+                "status": item.status,
+                "details": item.details,
+                "requested_at": item.requested_at,
+                "completed_at": item.completed_at,
+            }
+            for item in db.query(PrivacyRequest).filter(PrivacyRequest.user_id == current_user.id).order_by(PrivacyRequest.requested_at.asc()).all()
+        ],
+        "sessions": [
+            {
+                "id": item.id,
+                "created_at": item.created_at,
+                "expires_at": item.expires_at,
+                "last_seen_at": item.last_seen_at,
+                "revoked_at": item.revoked_at,
+                "user_agent": item.user_agent,
+            }
+            for item in db.query(AuthSession).filter(AuthSession.user_id == current_user.id).order_by(AuthSession.created_at.asc()).all()
         ],
         "workspaces": [{"id": item.id, "name": item.name, "slug": item.slug, "role": next((m.role for m in memberships if m.organization_id == item.id), None)} for item in organizations],
         "privacy_preferences": {"analytics": preferences.analytics, "marketing": preferences.marketing, "personalized_search": preferences.personalized_search},
@@ -2583,7 +2691,7 @@ def create_workspace_invitation(payload: WorkspaceInviteCreate, workspace: Organ
         invited_by=current_user.id,
         email=email,
         role=role,
-        token=token,
+        token=hash_security_token(token),
         expires_at=(datetime.now(timezone.utc) + timedelta(days=7)).isoformat(timespec="seconds").replace("+00:00", "Z"),
         created_at=utc_now_iso(),
     )
@@ -2599,8 +2707,10 @@ def create_workspace_invitation(payload: WorkspaceInviteCreate, workspace: Organ
 
 @app.post("/api/workspace-invitations/accept")
 def accept_workspace_invitation(payload: WorkspaceInviteAccept, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    raw_token = payload.token.strip()
+    hashed_token = hash_security_token(raw_token)
     invitation = db.query(OrganizationInvitation).filter(
-        OrganizationInvitation.token == payload.token.strip(),
+        (OrganizationInvitation.token == hashed_token) | (OrganizationInvitation.token == raw_token),
         OrganizationInvitation.accepted_at.is_(None),
     ).first()
     if not invitation:
@@ -2609,6 +2719,9 @@ def accept_workspace_invitation(payload: WorkspaceInviteAccept, current_user: Us
         raise HTTPException(status_code=400, detail="This invitation has expired")
     if current_user.email != invitation.email:
         raise HTTPException(status_code=403, detail="Sign in with the invited email address to accept this invitation")
+    # Migrate invitations created before token-at-rest hashing was introduced.
+    if invitation.token == raw_token:
+        invitation.token = hashed_token
     existing = db.query(OrganizationMember).filter(
         OrganizationMember.organization_id == invitation.organization_id,
         OrganizationMember.user_id == current_user.id,

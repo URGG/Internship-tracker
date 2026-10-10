@@ -189,11 +189,11 @@ Optional:
 - `TURNSTILE_EXPECTED_HOSTNAME` to restrict verification to the deployed frontend hostname
 - `RAPIDAPI_KEY` is optional; leave it unset when each user enters their own key in Settings
 - `USAJOBS_API_KEY` and `USAJOBS_USER_AGENT` are optional; set both only after requesting and accepting access under the USAJOBS API terms
-- `TERMS_URL` and `PRIVACY_URL` should point to the deployed, attorney-reviewed policies; `COOKIES_URL`, `DISCLAIMER_URL`, and `ACCEPTABLE_USE_URL` can point to the matching public legal pages
+- `TERMS_URL`, `PRIVACY_URL`, and `NOTICE_AT_COLLECTION_URL` should point to the deployed, attorney-reviewed policies; `COOKIES_URL`, `DISCLAIMER_URL`, and `ACCEPTABLE_USE_URL` can point to the matching public legal pages
 - `TERMS_VERSION` and `PRIVACY_VERSION` identify the policy versions recorded at signup
 - `REQUIRE_LEGAL_CONSENT=true` requires current Terms and Privacy acceptance before account creation (enabled automatically in production)
 - `LEGAL_ENTITY_NAME`, `LEGAL_CONTACT_EMAIL`, `LEGAL_BUSINESS_ADDRESS`, `MINIMUM_AGE`, and `REQUIRE_AGE_CONFIRMATION` configure the public legal pages and age policy
-- `STRICT_LEGAL_CONFIG=true` makes production refuse to start until attorney-reviewed Terms/Privacy URLs and a real legal contact email are configured. Keep it `false` only while completing deployment setup; the health response reports missing values.
+- `STRICT_LEGAL_CONFIG=true` makes production refuse to start until attorney-reviewed Terms/Privacy/Notice URLs, a real legal contact email, and a business address are configured. Keep it `false` only while completing deployment setup; the health response reports missing values.
 - `REQUIRE_EMAIL_VERIFICATION`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_USERNAME`, `SMTP_PASSWORD`, `SMTP_FROM`, and `SMTP_USE_TLS` enable verification and password-reset delivery
 - SMTP must be configured for password-reset and username-recovery emails to actually send; the recovery UI reports when email delivery is unavailable.
 - `AUTH_SESSION_REQUIRED=true` enables server-side session revocation; `MFA_ISSUER` names the authenticator-app issuer
@@ -251,8 +251,8 @@ Optional:
 
 - `VITE_API_BASE_URL`
 - `VITE_TURNSTILE_SITE_KEY` to show the Cloudflare Turnstile widget in the auth modal; leave unset to keep Turnstile disabled
-- `VITE_TERMS_URL`, `VITE_PRIVACY_URL`, `VITE_COOKIES_URL`, `VITE_DISCLAIMER_URL`, and `VITE_ACCEPTABLE_USE_URL` configure the public legal-page links
-- `VITE_TERMS_VERSION`, `VITE_PRIVACY_VERSION`, `VITE_LEGAL_ENTITY_NAME`, `VITE_LEGAL_CONTACT_EMAIL`, `VITE_MINIMUM_AGE`, and `VITE_POLICY_EFFECTIVE_DATE` populate the public policy pages and should match the backend configuration
+- `VITE_TERMS_URL`, `VITE_PRIVACY_URL`, `VITE_COOKIES_URL`, `VITE_DISCLAIMER_URL`, `VITE_ACCEPTABLE_USE_URL`, and `VITE_NOTICE_AT_COLLECTION_URL` configure the public legal-page links
+- `VITE_TERMS_VERSION`, `VITE_PRIVACY_VERSION`, `VITE_LEGAL_ENTITY_NAME`, `VITE_LEGAL_CONTACT_EMAIL`, `VITE_LEGAL_BUSINESS_ADDRESS`, `VITE_MINIMUM_AGE`, and `VITE_POLICY_EFFECTIVE_DATE` populate the public policy pages and should match the backend configuration
 
 See [docs/COMPLIANCE_CHECKLIST.md](docs/COMPLIANCE_CHECKLIST.md) for the production review and operational checklist.
 

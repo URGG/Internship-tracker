@@ -29,6 +29,8 @@ services:
         sync: false
       - key: ACCEPTABLE_USE_URL
         sync: false
+      - key: NOTICE_AT_COLLECTION_URL
+        sync: false
       - key: TERMS_VERSION
         value: v1
       - key: PRIVACY_VERSION

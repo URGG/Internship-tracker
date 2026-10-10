@@ -33,6 +33,7 @@ from main import (  # noqa: E402
     add_usage_event,
     build_analytics_payload,
     get_monthly_usage_breakdown,
+    hash_security_token,
     normalize_job_link,
     normalize_job_payload,
     normalize_rapidapi_key,
@@ -119,6 +120,8 @@ def test_product_usage_tracks_units_separately_from_ai():
     try:
         user = User(username="usage-test", hashed_password="test")
         db.add(user)
+        db.flush()
+        db.add(PrivacyPreference(user_id=user.id, analytics=True, updated_at="2026-10-09T00:00:00Z"))
         db.flush()
         add_usage_event(db, user.id, "job_search", details={"results": 12})
         add_usage_event(db, user.id, "hunter_jobs_added", units=4)
@@ -370,10 +373,18 @@ def test_workspace_members_share_only_the_selected_workspace(monkeypatch):
     invitation = client.post("/api/workspaces/%s/invitations" % owner_workspace["id"], headers=owner_scope, json={"email": "invited@example.com", "role": "viewer"})
     assert invitation.status_code == 200
     assert "invite=" in invitation.json()["invite_url"]
+    raw_invitation_token = invitation.json()["invite_url"].split("invite=", 1)[1]
+    db = SessionLocal()
+    try:
+        stored_invitation = db.query(OrganizationInvitation).filter(OrganizationInvitation.id == invitation.json()["id"]).first()
+        assert stored_invitation.token == hash_security_token(raw_invitation_token)
+        assert stored_invitation.token != raw_invitation_token
+    finally:
+        db.close()
     assert client.post("/api/signup", json={"username": "invited-user", "email": "invited@example.com", "password": "password123"}).status_code == 200
     invited_login = client.post("/api/login", json={"email": "invited@example.com", "password": "password123"})
     invited_headers = {"Authorization": f"Bearer {invited_login.json()['access_token']}"}
-    accepted = client.post("/api/workspace-invitations/accept", headers=invited_headers, json={"token": invitation.json()["invite_url"].split("invite=", 1)[1]})
+    accepted = client.post("/api/workspace-invitations/accept", headers=invited_headers, json={"token": raw_invitation_token})
     assert accepted.status_code == 200
     assert accepted.json()["id"] == owner_workspace["id"]
 

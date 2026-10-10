@@ -4,7 +4,7 @@ import pdfWorker from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 import Autocomplete from "../components/shared/Autocomplete";
 import Icon from "../components/shared/Icon";
 import PrivacyCenter from "../components/shared/PrivacyCenter";
-import { ACCEPTABLE_USE_URL, COOKIES_URL, DISCLAIMER_URL, PRIVACY_URL, TERMS_URL } from "../config";
+import { ACCEPTABLE_USE_URL, COOKIES_URL, DISCLAIMER_URL, NOTICE_AT_COLLECTION_URL, PRIVACY_URL, TERMS_URL } from "../config";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -144,6 +144,7 @@ export default function SettingsPage({
           <a href={COOKIES_URL}>Cookies & storage</a>
           <a href={DISCLAIMER_URL}>AI disclaimer</a>
           <a href={ACCEPTABLE_USE_URL}>Acceptable use</a>
+          <a href={NOTICE_AT_COLLECTION_URL}>Notice at Collection</a>
         </div>
       </div>
       <div className="scard">

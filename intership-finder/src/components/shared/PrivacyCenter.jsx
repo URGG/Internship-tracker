@@ -89,7 +89,7 @@ export default function PrivacyCenter({ authHeaders, toast, onAccountDeleted }) 
     <>
       <div className="scard">
         <h3>Privacy Center</h3>
-        <p style={{ fontSize: 12, color: "var(--txt2)" }}>Control optional processing, download your data, and submit privacy requests. Search and tracker data needed to provide the service remain enabled.</p>
+        <p style={{ fontSize: 12, color: "var(--txt2)" }}>Control optional processing, download your data, and submit privacy requests. Product-usage analytics stays off until you opt in; search, tracker, security, and billing data needed to provide the service remain enabled.</p>
         <div style={{ display: "grid", gap: 9, marginTop: 16 }}>
           {[['analytics', 'Product analytics', 'Allow optional usage analytics.'], ['marketing', 'Marketing messages', 'Allow optional product updates and promotions.'], ['personalized_search', 'Personalized search', 'Use your saved preferences to improve search suggestions.']].map(([key, label, detail]) => (
             <label key={key} style={{ display: "flex", gap: 10, alignItems: "flex-start", fontSize: 12, color: "var(--txt2)" }}>
